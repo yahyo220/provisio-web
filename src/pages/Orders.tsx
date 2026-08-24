@@ -15,12 +15,7 @@ const PAGE_SIZE = 4
 
 const ORDER_STATUSES: OrderStatus[] = ['new', 'confirmed', 'preparing', 'ready', 'out', 'delivered', 'cancelled']
 const PAYMENT_STATUSES: PaymentStatus[] = ['paid', 'pending', 'overdue']
-
-/** Very rough "day in March" extractor so the mock dates can be filtered/sorted without a real calendar. */
-function dayOf(dateStr: string): number {
-  const match = dateStr.match(/(\d{1,2}),/)
-  return match ? Number(match[1]) : 0
-}
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 export default function Orders() {
   const { orders } = useData()
@@ -35,23 +30,32 @@ export default function Orders() {
   const statusOptions = ORDER_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))
   const paymentOptions = PAYMENT_STATUSES.map((p) => ({ value: p, label: t(`payment.${p}`) }))
 
-  const latestDay = useMemo(() => Math.max(...orders.map((o) => dayOf(o.date))), [orders])
+  const latestTime = useMemo(
+    () => Math.max(0, ...orders.map((o) => new Date(o.createdAt).getTime())),
+    [orders],
+  )
 
   const filtered = useMemo(() => {
     let list = orders
     const q = search.trim().toLowerCase()
     if (q) {
       list = list.filter(
-        (o) => o.id.toLowerCase().includes(q) || o.customer.toLowerCase().includes(q) || o.meta.toLowerCase().includes(q),
+        (o) =>
+          String(o.orderNumber).includes(q) ||
+          o.customer.toLowerCase().includes(q) ||
+          o.meta.toLowerCase().includes(q),
       )
     }
     if (status) list = list.filter((o) => o.status === status)
     if (payment) list = list.filter((o) => o.payment === payment)
-    if (thisWeek) list = list.filter((o) => latestDay - dayOf(o.date) <= 6)
+    if (thisWeek) list = list.filter((o) => latestTime - new Date(o.createdAt).getTime() <= WEEK_MS)
 
-    list = [...list].sort((a, b) => (sortAsc ? dayOf(a.date) - dayOf(b.date) : dayOf(b.date) - dayOf(a.date)))
+    list = [...list].sort((a, b) => {
+      const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      return sortAsc ? diff : -diff
+    })
     return list
-  }, [orders, search, status, payment, thisWeek, sortAsc, latestDay])
+  }, [orders, search, status, payment, thisWeek, sortAsc, latestTime])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount)
@@ -151,8 +155,8 @@ export default function Orders() {
           {pageItems.length === 0 && <div className="empty-state">{t('orders.empty')}</div>}
 
           {pageItems.map((order) => (
-            <Link className="order-row" to={`/orders/${order.id.replace('#', '')}`} key={order.id}>
-              <span className="order-id">{order.id}</span>
+            <Link className="order-row" to={`/orders/${order.id}`} key={order.id}>
+              <span className="order-id">#{order.orderNumber}</span>
               <div className="order-cust">
                 <span className="name">{order.customer}</span>
                 <span className="meta">{order.meta}</span>

@@ -1,0 +1,249 @@
+import { formatOrderDate, formatRelative, initialsOf } from './format'
+import { placeholderImage, type OrderLineItem } from './data'
+import { supabase } from './supabase'
+import type { CustomerRow, DeliveryRow, DeliveryStatus, OrderRow, OrderStatus, PaymentStatus, ProductRow, StockStatus } from './types'
+
+function assertClient() {
+  if (!supabase) throw new Error('Supabase is not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
+  return supabase
+}
+
+export interface FetchedData {
+  products: ProductRow[]
+  customers: CustomerRow[]
+  orders: OrderRow[]
+  deliveries: DeliveryRow[]
+  drivers: string[]
+}
+
+/** Pulls every table in parallel and joins everything client-side — simple and
+ * predictable, and fine at the row counts a B2B dashboard like this deals with. */
+export async function fetchAll(): Promise<FetchedData> {
+  const db = assertClient()
+
+  const [productsRes, customersRes, ordersRes, itemsRes, deliveriesRes, driversRes] = await Promise.all([
+    db.from('products').select('*').order('updated_at', { ascending: false }),
+    db.from('customers').select('*').order('created_at', { ascending: false }),
+    db.from('orders').select('*').order('created_at', { ascending: false }),
+    db.from('order_items').select('order_id, qty, unit_price'),
+    db.from('deliveries').select('*').order('created_at', { ascending: false }),
+    db.from('drivers').select('*').order('name', { ascending: true }),
+  ])
+
+  for (const res of [productsRes, customersRes, ordersRes, itemsRes, deliveriesRes, driversRes]) {
+    if (res.error) throw res.error
+  }
+
+  const products: ProductRow[] = (productsRes.data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    sku: row.sku,
+    category: row.category,
+    price: `$${Number(row.price).toFixed(2)}`,
+    unit: row.unit,
+    stock: row.stock as StockStatus,
+    active: row.active,
+    updated: formatRelative(row.updated_at),
+    image: row.image_url || placeholderImage,
+  }))
+
+  const totalsByOrder = new Map<string, number>()
+  for (const item of itemsRes.data ?? []) {
+    totalsByOrder.set(item.order_id, (totalsByOrder.get(item.order_id) ?? 0) + item.qty * Number(item.unit_price))
+  }
+
+  const customersById = new Map((customersRes.data ?? []).map((c) => [c.id, c]))
+  const ordersByCustomer = new Map<string, number>()
+  const spentByCustomer = new Map<string, number>()
+
+  const orders: OrderRow[] = (ordersRes.data ?? []).map((row) => {
+    const customer = row.customer_id ? customersById.get(row.customer_id) : null
+    const total = (totalsByOrder.get(row.id) ?? 0) + Number(row.delivery_fee ?? 0)
+    if (row.customer_id) {
+      ordersByCustomer.set(row.customer_id, (ordersByCustomer.get(row.customer_id) ?? 0) + 1)
+      spentByCustomer.set(row.customer_id, (spentByCustomer.get(row.customer_id) ?? 0) + total)
+    }
+    return {
+      id: row.id,
+      orderNumber: row.order_number,
+      customerId: row.customer_id,
+      customer: customer?.name ?? '—',
+      meta: customer ? `${customer.type} · ${customer.location ?? ''}`.replace(/ · $/, '') : '—',
+      date: formatOrderDate(row.created_at),
+      createdAt: row.created_at,
+      total: `$${total.toFixed(2)}`,
+      deliveryFee: Number(row.delivery_fee ?? 0),
+      payment: row.payment as PaymentStatus,
+      status: row.status as OrderStatus,
+      products: undefined,
+    }
+  })
+
+  const customers: CustomerRow[] = (customersRes.data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    contact: row.contact || '—',
+    location: row.location || '—',
+    orders: ordersByCustomer.get(row.id) ?? 0,
+    spent: `$${(spentByCustomer.get(row.id) ?? 0).toFixed(2)}`,
+    status: row.status as CustomerRow['status'],
+    initials: initialsOf(row.name),
+  }))
+
+  const driversById = new Map((driversRes.data ?? []).map((d) => [d.id, d]))
+  const ordersById = new Map((ordersRes.data ?? []).map((o) => [o.id, o]))
+
+  const deliveries: DeliveryRow[] = (deliveriesRes.data ?? []).map((row) => {
+    const order = row.order_id ? ordersById.get(row.order_id) : null
+    const driver = row.driver_id ? driversById.get(row.driver_id) : null
+    return {
+      id: row.id,
+      orderId: order ? `#${order.order_number}` : '—',
+      orderDbId: row.order_id ?? null,
+      customer: order?.customer_id ? (customersById.get(order.customer_id)?.name ?? '—') : '—',
+      address: row.address || '—',
+      driver: driver?.name ?? '—',
+      eta: row.eta || '—',
+      status: row.status as DeliveryStatus,
+    }
+  })
+
+  const drivers = (driversRes.data ?? []).map((d) => d.name)
+
+  return { products, customers, orders, deliveries, drivers }
+}
+
+export async function insertProduct(product: {
+  name: string
+  sku: string
+  category: string
+  price: number
+  unit: string
+  stock: StockStatus
+  active: boolean
+  imageUrl?: string
+}) {
+  const db = assertClient()
+  const { error } = await db.from('products').insert({
+    name: product.name,
+    sku: product.sku,
+    category: product.category,
+    price: product.price,
+    unit: product.unit,
+    stock: product.stock,
+    active: product.active,
+    image_url: product.imageUrl ?? null,
+  })
+  if (error) throw error
+}
+
+export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
+  const db = assertClient()
+  const dbPatch: Record<string, unknown> = {}
+  if (patch.name !== undefined) dbPatch.name = patch.name
+  if (patch.category !== undefined) dbPatch.category = patch.category
+  if (patch.price !== undefined) dbPatch.price = Number(String(patch.price).replace('$', ''))
+  if (patch.unit !== undefined) dbPatch.unit = patch.unit
+  if (patch.stock !== undefined) dbPatch.stock = patch.stock
+  if (patch.active !== undefined) dbPatch.active = patch.active
+  const { error } = await db.from('products').update(dbPatch).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteProductRow(id: string) {
+  const db = assertClient()
+  const { error } = await db.from('products').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function insertCustomer(customer: {
+  name: string
+  type: string
+  contact: string
+  location: string
+}) {
+  const db = assertClient()
+  const { error } = await db.from('customers').insert({
+    name: customer.name,
+    type: customer.type,
+    contact: customer.contact,
+    location: customer.location,
+    status: 'active',
+  })
+  if (error) throw error
+}
+
+export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>) {
+  const db = assertClient()
+  const dbPatch: Record<string, unknown> = {}
+  if (patch.name !== undefined) dbPatch.name = patch.name
+  if (patch.type !== undefined) dbPatch.type = patch.type
+  if (patch.contact !== undefined) dbPatch.contact = patch.contact
+  if (patch.location !== undefined) dbPatch.location = patch.location
+  if (patch.status !== undefined) dbPatch.status = patch.status
+  const { error } = await db.from('customers').update(dbPatch).eq('id', id)
+  if (error) throw error
+}
+
+export async function updateDeliveryRow(id: string, patch: Partial<DeliveryRow>) {
+  const db = assertClient()
+  const dbPatch: Record<string, unknown> = {}
+  if (patch.address !== undefined) dbPatch.address = patch.address
+  if (patch.eta !== undefined) dbPatch.eta = patch.eta
+  if (patch.status !== undefined) dbPatch.status = patch.status
+  if (patch.driver !== undefined) {
+    dbPatch.driver_id = await resolveDriverId(patch.driver)
+  }
+  const { error } = await db.from('deliveries').update(dbPatch).eq('id', id)
+  if (error) throw error
+}
+
+/** Finds a driver by name, creating the row on first use — keeps the UI's plain
+ * "pick a name" flow working without a separate driver-management screen yet. */
+async function resolveDriverId(name: string): Promise<string> {
+  const db = assertClient()
+  const existing = await db.from('drivers').select('id').eq('name', name).maybeSingle()
+  if (existing.data) return existing.data.id
+  const created = await db.from('drivers').insert({ name }).select('id').single()
+  if (created.error) throw created.error
+  return created.data.id
+}
+
+export async function assignDriverToDelivery(deliveryId: string, driverName: string) {
+  const db = assertClient()
+  const driverId = await resolveDriverId(driverName)
+  const { error } = await db.from('deliveries').update({ driver_id: driverId }).eq('id', deliveryId)
+  if (error) throw error
+}
+
+export async function updateOrderStatus(id: string, status: string) {
+  const db = assertClient()
+  const { error } = await db.from('orders').update({ status }).eq('id', id)
+  if (error) throw error
+}
+
+export async function fetchOrderItems(orderId: string): Promise<OrderLineItem[]> {
+  const db = assertClient()
+  const { data, error } = await db
+    .from('order_items')
+    .select('*')
+    .eq('order_id', orderId)
+    .order('id', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    sku: row.sku ?? '',
+    qty: row.qty,
+    unit: row.unit,
+    unitPrice: Number(row.unit_price),
+    image: row.image_url || placeholderImage,
+  }))
+}
+
+export async function updateOrderItemQty(itemId: string, qty: number) {
+  const db = assertClient()
+  const { error } = await db.from('order_items').update({ qty }).eq('id', itemId)
+  if (error) throw error
+}

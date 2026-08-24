@@ -8,11 +8,6 @@ import { useData } from '../store/DataContext'
 
 const TYPES = ['Restaurant', 'Hotel', 'Café', 'School', 'Institution']
 
-function initialsOf(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  return (parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')
-}
-
 export default function AddCustomer() {
   const { addCustomer } = useData()
   const { t, customerType } = useLanguage()
@@ -23,18 +18,13 @@ export default function AddCustomer() {
   const [contact, setContact] = useState('')
   const [location, setLocation] = useState('')
 
-  function handleSave() {
+  async function handleSave() {
     if (!name.trim()) return
-    addCustomer({
-      id: `CUST-${Math.floor(1000 + Math.random() * 9000)}`,
+    await addCustomer({
       name,
       type,
       contact: contact || '—',
       location: location || '—',
-      orders: 0,
-      spent: '$0',
-      status: 'active',
-      initials: initialsOf(name).toUpperCase() || 'NA',
     })
     navigate('/customers')
   }

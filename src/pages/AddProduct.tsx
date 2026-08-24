@@ -27,19 +27,17 @@ export default function AddProduct() {
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
 
-  function handleSave(andAddAnother: boolean) {
+  async function handleSave(andAddAnother: boolean) {
     if (!name.trim() || !sku.trim()) return
-    addProduct({
-      id: sku,
+    await addProduct({
       name,
       sku,
       category: selectedCategory,
-      price: `$${Number(price || 0).toFixed(2)}`,
+      price: Number(price || 0),
       unit: selectedUnit,
       stock,
       active,
-      updated: 'Just now',
-      image: placeholderImage,
+      imageUrl: placeholderImage,
     })
     if (andAddAnother) {
       setName('')

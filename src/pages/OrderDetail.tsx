@@ -1,12 +1,15 @@
 import { ArrowLeft, Download, Minus, Package, PackageX, Plus, RefreshCw } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
 import StatusPill from '../components/ui/StatusPill'
 import { useLanguage } from '../i18n/LanguageContext'
-import { defaultOrderLineItems, deliveryFee, orderTimeline, relatedOrders } from '../lib/data'
+import { fetchOrderItems, updateOrderItemQty } from '../lib/api'
+import type { OrderLineItem } from '../lib/data'
+import { orderTimeline, relatedOrders } from '../lib/data'
+import { supabase } from '../lib/supabase'
 import type { OrderRow, OrderStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -17,7 +20,7 @@ export default function OrderDetail() {
   const { orderId } = useParams<{ orderId: string }>()
   const { orders } = useData()
   const { t } = useLanguage()
-  const match = orders.find((o) => o.id.replace('#', '') === orderId)
+  const match = orders.find((o) => o.id === orderId)
 
   if (!match) {
     return (
@@ -34,28 +37,55 @@ export default function OrderDetail() {
 }
 
 function OrderDetailForm({ order }: { order: OrderRow }) {
+  const { updateOrderStatus } = useData()
   const { t, unit } = useLanguage()
 
-  const [lineItems, setLineItems] = useState(defaultOrderLineItems)
+  const [lineItems, setLineItems] = useState<OrderLineItem[]>([])
+  const [itemsLoading, setItemsLoading] = useState(Boolean(supabase))
   const [status, setStatus] = useState<OrderStatus>(order.status)
 
+  useEffect(() => {
+    if (!supabase) {
+      setItemsLoading(false)
+      return
+    }
+    let cancelled = false
+    setItemsLoading(true)
+    fetchOrderItems(order.id)
+      .then((items) => {
+        if (!cancelled) setLineItems(items)
+      })
+      .finally(() => {
+        if (!cancelled) setItemsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [order.id])
+
   const statusOptions = ORDER_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))
-  const displayId = order.id.replace('#', '')
 
   const subtotal = useMemo(
     () => lineItems.reduce((sum, item) => sum + item.qty * item.unitPrice, 0),
     [lineItems],
   )
-  const total = subtotal + deliveryFee
+  const total = subtotal + order.deliveryFee
 
-  function changeQty(sku: string, delta: number) {
-    setLineItems((items) =>
-      items.map((item) => (item.sku === sku ? { ...item, qty: Math.max(0, item.qty + delta) } : item)),
-    )
+  function changeQty(item: OrderLineItem, delta: number) {
+    const qty = Math.max(0, item.qty + delta)
+    setLineItems((items) => items.map((i) => (i === item ? { ...i, qty } : i)))
+    if (item.id) updateOrderItemQty(item.id, qty).catch((err) => console.error(err))
   }
 
-  function setQty(sku: string, qty: number) {
-    setLineItems((items) => items.map((item) => (item.sku === sku ? { ...item, qty: Math.max(0, qty) } : item)))
+  function setQty(item: OrderLineItem, qty: number) {
+    const safeQty = Math.max(0, qty)
+    setLineItems((items) => items.map((i) => (i === item ? { ...i, qty: safeQty } : i)))
+    if (item.id) updateOrderItemQty(item.id, safeQty).catch((err) => console.error(err))
+  }
+
+  function changeStatus(next: OrderStatus) {
+    setStatus(next)
+    updateOrderStatus(order.id, next).catch((err) => console.error(err))
   }
 
   return (
@@ -66,7 +96,9 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
             <ArrowLeft />
           </Link>
           <div>
-            <h1>Order #ORD-{displayId}</h1>
+            <h1>
+              {t('common.order')} #{order.orderNumber}
+            </h1>
             <p className="order-meta" style={{ fontSize: 14, color: 'var(--gesso-fg-muted)', marginTop: 8 }}>
               {t('orderDetail.placed')} {order.date} · {order.customer}
             </p>
@@ -84,7 +116,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
             icon={<RefreshCw />}
             options={statusOptions}
             value={status}
-            onChange={(v) => setStatus((v as OrderStatus) ?? status)}
+            onChange={(v) => changeStatus((v as OrderStatus) ?? status)}
           />
         </div>
       </div>
@@ -111,7 +143,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                 </thead>
                 <tbody>
                   {lineItems.map((line) => (
-                    <tr key={line.sku}>
+                    <tr key={line.id ?? line.sku}>
                       <td>
                         <div className="prod-cell">
                           <img className="prod-thumb" src={line.image} alt="" />
@@ -127,7 +159,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                             type="button"
                             className="action-btn"
                             aria-label={`Decrease quantity of ${line.name}`}
-                            onClick={() => changeQty(line.sku, -1)}
+                            onClick={() => changeQty(line, -1)}
                           >
                             <Minus style={{ width: 14, height: 14 }} />
                           </button>
@@ -136,14 +168,14 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                             type="number"
                             min={0}
                             value={line.qty}
-                            onChange={(e) => setQty(line.sku, Number(e.target.value))}
+                            onChange={(e) => setQty(line, Number(e.target.value))}
                             aria-label={`Quantity of ${line.name}`}
                           />
                           <button
                             type="button"
                             className="action-btn"
                             aria-label={`Increase quantity of ${line.name}`}
-                            onClick={() => changeQty(line.sku, 1)}
+                            onClick={() => changeQty(line, 1)}
                           >
                             <Plus style={{ width: 14, height: 14 }} />
                           </button>
@@ -156,13 +188,13 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                   ))}
                 </tbody>
               </table>
-              {lineItems.length === 0 && <div className="empty-state">—</div>}
+              {!itemsLoading && lineItems.length === 0 && <div className="empty-state">{t('common.noData')}</div>}
             </div>
             <div className="totals-row">
               <div className="t-block">
                 <div className="t-label">{t('orderDetail.deliveryFee')}</div>
                 <div className="t-value" style={{ fontSize: 'var(--gesso-text-lg)' }}>
-                  ${deliveryFee.toFixed(2)}
+                  ${order.deliveryFee.toFixed(2)}
                 </div>
               </div>
               <div className="t-block">
@@ -174,7 +206,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
 
           <Card>
             <p className="section-label">{t('orderDetail.orderTimeline')}</p>
-            {orderTimeline.length === 0 && <div className="empty-state">—</div>}
+            {orderTimeline.length === 0 && <div className="empty-state">{t('common.noData')}</div>}
             <div className="timeline">
               {orderTimeline.map((step) => (
                 <div className="tl-row" key={step.titleKey}>
@@ -222,7 +254,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
               <Button
                 variant="danger-text"
                 block
-                onClick={() => setStatus('cancelled')}
+                onClick={() => changeStatus('cancelled')}
                 style={{
                   justifyContent: 'center',
                   border: '1px solid var(--gesso-divider)',
@@ -246,7 +278,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
           </span>
         </div>
         <div className="related-list">
-          {relatedOrders.length === 0 && <div className="empty-state">—</div>}
+          {relatedOrders.length === 0 && <div className="empty-state">{t('common.noData')}</div>}
           {relatedOrders.map((related) => {
             const Icon = RELATED_ICON[related.icon]
             return (

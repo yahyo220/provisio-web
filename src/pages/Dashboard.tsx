@@ -208,12 +208,12 @@ export default function Dashboard() {
                   key={order.id}
                   className="row-link"
                   tabIndex={0}
-                  onClick={() => navigate(`/orders/${order.id.replace('#', '')}`)}
+                  onClick={() => navigate(`/orders/${order.id}`)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') navigate(`/orders/${order.id.replace('#', '')}`)
+                    if (e.key === 'Enter') navigate(`/orders/${order.id}`)
                   }}
                 >
-                  <td className="order-id">{order.id}</td>
+                  <td className="order-id">#{order.orderNumber}</td>
                   <td>
                     <div className="cust">{order.customer}</div>
                     <div className="cust-sub">{order.meta}</div>

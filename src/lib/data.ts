@@ -64,6 +64,8 @@ export const orders: OrderRow[] = []
 export const products: ProductRow[] = []
 
 export interface OrderLineItem {
+  /** Supabase order_items row id (uuid) — absent for the (now empty) local mock rows. */
+  id?: string
   name: string
   sku: string
   qty: number

@@ -40,7 +40,7 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const [active, setActive] = useState(customer.status === 'active')
   const [saved, setSaved] = useState(false)
 
-  const customerOrders = orders.filter((o) => o.customer === customer.name)
+  const customerOrders = orders.filter((o) => o.customerId === customer.id)
 
   function handleSave() {
     updateCustomer(customer.id, { name, contact, location, type, status: active ? 'active' : 'inactive' })
@@ -120,14 +120,14 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
             ) : (
               <div className="related-list">
                 {customerOrders.map((order) => (
-                  <Link className="related-row" to={`/orders/${order.id.replace('#', '')}`} key={order.id}>
+                  <Link className="related-row" to={`/orders/${order.id}`} key={order.id}>
                     <div className="related-left">
                       <div className="related-icon">
                         <MapPin />
                       </div>
                       <div className="related-text">
                         <div className="related-title">
-                          {t('common.order')} {order.id}
+                          {t('common.order')} #{order.orderNumber}
                         </div>
                         <div className="related-meta">{order.date}</div>
                       </div>

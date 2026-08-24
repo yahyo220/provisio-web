@@ -1,11 +1,10 @@
-import { ArrowLeft, Check, ChevronDown, MapPin, Package, Truck } from 'lucide-react'
+import { ArrowLeft, Check, MapPin, Package, Truck } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import DeliveryStatusBadge from '../components/ui/DeliveryStatusBadge'
 import { useLanguage } from '../i18n/LanguageContext'
-import { drivers } from '../lib/data'
 import type { DeliveryRow, DeliveryStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -32,7 +31,7 @@ export default function DeliveryDetail() {
 }
 
 function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
-  const { orders, updateDelivery } = useData()
+  const { orders, drivers, updateDelivery } = useData()
   const { t } = useLanguage()
 
   const [driver, setDriver] = useState(delivery.driver)
@@ -41,10 +40,10 @@ function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
   const [eta, setEta] = useState(delivery.eta)
   const [saved, setSaved] = useState(false)
 
-  const order = orders.find((o) => o.id === delivery.orderId)
+  const order = orders.find((o) => o.id === delivery.orderDbId)
 
-  function handleSave() {
-    updateDelivery(delivery.id, { driver, status, address, eta })
+  async function handleSave() {
+    await updateDelivery(delivery.id, { driver, status, address, eta })
     setSaved(true)
   }
 
@@ -98,14 +97,18 @@ function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
 
             <div className="field">
               <label htmlFor="dd-driver">{t('deliveries.driver')}</label>
-              <div className="select-wrap">
-                <select id="dd-driver" value={driver} onChange={(e) => setDriver(e.target.value)}>
-                  {drivers.map((d) => (
-                    <option key={d}>{d}</option>
-                  ))}
-                </select>
-                <ChevronDown />
-              </div>
+              <input
+                id="dd-driver"
+                type="text"
+                list="dd-driver-names"
+                value={driver}
+                onChange={(e) => setDriver(e.target.value)}
+              />
+              <datalist id="dd-driver-names">
+                {drivers.map((d) => (
+                  <option key={d} value={d} />
+                ))}
+              </datalist>
             </div>
 
             <div className="field">
@@ -162,14 +165,14 @@ function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
           {order && (
             <Card>
               <p className="section-label">{t('deliveryDetail.linkedOrder')}</p>
-              <Link className="related-row" to={`/orders/${order.id.replace('#', '')}`}>
+              <Link className="related-row" to={`/orders/${order.id}`}>
                 <div className="related-left">
                   <div className="related-icon">
                     <Package />
                   </div>
                   <div className="related-text">
                     <div className="related-title">
-                      {t('common.order')} {order.id}
+                      {t('common.order')} #{order.orderNumber}
                     </div>
                     <div className="related-meta">
                       {order.date} · {order.total}

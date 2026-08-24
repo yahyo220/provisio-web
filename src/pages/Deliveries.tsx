@@ -7,21 +7,21 @@ import DeliveryStatusBadge from '../components/ui/DeliveryStatusBadge'
 import Dropdown from '../components/ui/Dropdown'
 import Modal from '../components/ui/Modal'
 import { useLanguage } from '../i18n/LanguageContext'
-import { deliveryKpis, drivers } from '../lib/data'
+import { deliveryKpis } from '../lib/data'
 import type { DeliveryStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
 const DELIVERY_STATUSES: DeliveryStatus[] = ['scheduled', 'in-transit', 'delayed', 'delivered', 'cancelled']
 
 export default function Deliveries() {
-  const { deliveries, assignDriver } = useData()
+  const { deliveries, drivers, assignDriver } = useData()
   const { t, label, ref: refText } = useLanguage()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [todayOnly, setTodayOnly] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
-  const [assignDelivery, setAssignDelivery] = useState(deliveries[0]?.id ?? '')
-  const [assignDriverName, setAssignDriverName] = useState(drivers[0])
+  const [assignDelivery, setAssignDelivery] = useState('')
+  const [assignDriverName, setAssignDriverName] = useState('')
 
   const statusOptions = DELIVERY_STATUSES.map((s) => ({ value: s, label: t(`deliveryStatus.${s}`) }))
 
@@ -61,8 +61,12 @@ export default function Deliveries() {
           <Button
             variant="primary"
             icon={<Truck />}
-            disabled={deliveries.length === 0 || drivers.length === 0}
-            onClick={() => setAssignOpen(true)}
+            disabled={deliveries.length === 0}
+            onClick={() => {
+              setAssignDelivery(deliveries[0]?.id ?? '')
+              setAssignDriverName(drivers[0] ?? '')
+              setAssignOpen(true)
+            }}
           >
             {t('deliveries.assignRoute')}
           </Button>
@@ -213,18 +217,19 @@ export default function Deliveries() {
           </div>
           <div className="field">
             <label htmlFor="assign-driver">{t('deliveries.modal.driver')}</label>
-            <div className="select-wrap">
-              <select
-                id="assign-driver"
-                value={assignDriverName}
-                onChange={(e) => setAssignDriverName(e.target.value)}
-              >
-                {drivers.map((d) => (
-                  <option key={d}>{d}</option>
-                ))}
-              </select>
-              <ChevronDown />
-            </div>
+            <input
+              id="assign-driver"
+              type="text"
+              list="driver-names"
+              placeholder="e.g. R. Castillo"
+              value={assignDriverName}
+              onChange={(e) => setAssignDriverName(e.target.value)}
+            />
+            <datalist id="driver-names">
+              {drivers.map((d) => (
+                <option key={d} value={d} />
+              ))}
+            </datalist>
           </div>
         </Modal>
       )}
