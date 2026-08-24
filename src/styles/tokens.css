@@ -1,0 +1,90 @@
+/*
+  Design tokens — "Cool Command"
+  Light interface, deep green accents on a pale orange ground.
+  Ground truth: per-screen reference HTML + design.md token tables.
+  Where the two disagreed, the reference HTML's embedded :root won
+  (e.g. radii 6/10/16px, shadows all "none").
+*/
+
+:root {
+  /* ---- Surfaces ---- */
+  --gesso-canvas: #f7f2e7;
+  --gesso-surface: #ffffff;
+  --gesso-surface-elevated: #fbf7ef;
+  --gesso-surface-recessed: #f0e5df;
+  --gesso-divider: rgba(28, 28, 24, 0.05);
+
+  /* ---- Ink ---- */
+  --gesso-fg: #1c1c18;
+  --gesso-fg-muted: #8a8678;
+
+  /* ---- Brand ---- */
+  --gesso-accent: #1e5c3e; /* primary */
+  --gesso-accent-2: #d96b3a; /* secondary */
+  --gesso-on-accent: #ffffff;
+
+  /* ---- Semantic ---- */
+  --gesso-success: #1e5c3e;
+  --gesso-warning: #b8863a;
+  --gesso-danger: #a3402f;
+
+  /* ---- Data viz ramp ---- */
+  --gesso-data-1: #8f3500;
+  --gesso-data-2: #b0460a;
+  --gesso-data-3: #cb5f2d;
+  --gesso-data-4: #e77847;
+  --gesso-data-5: #ff9466;
+  --gesso-data-6: #ffbca1;
+
+  /* ---- Radius ---- */
+  --gesso-radius-sm: 6px;
+  --gesso-radius-md: 10px;
+  --gesso-radius-lg: 16px;
+  --gesso-radius-full: 9999px;
+
+  /* ---- Shadow (system is flat — depth comes from surface tint + air) ---- */
+  --gesso-shadow-sm: none;
+  --gesso-shadow-md: none;
+  --gesso-shadow-lg: none;
+
+  /* ---- Type families ---- */
+  --gesso-font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --gesso-font-body: 'Schibsted Grotesk', system-ui, -apple-system, sans-serif;
+  --gesso-font-mono: 'Schibsted Grotesk', ui-monospace, 'JetBrains Mono', monospace;
+
+  /* ---- Type scale ---- */
+  --gesso-text-xs: 11px;
+  --gesso-text-sm: 12px;
+  --gesso-text-base: 14px;
+  --gesso-text-md: 15px;
+  --gesso-text-lg: 16px;
+  --gesso-text-xl: 20px;
+  --gesso-text-2xl: 26px;
+  --gesso-text-3xl: 30px;
+  --gesso-text-4xl: 34px;
+  --gesso-text-5xl: 40px;
+  --gesso-text-6xl: 48px;
+
+  /* ---- Motion ---- */
+  --gesso-duration-fast: 160ms;
+  --gesso-easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Spacing (8px base unit) ---- */
+  --gesso-space-1: 4px;
+  --gesso-space-2: 8px;
+  --gesso-space-3: 12px;
+  --gesso-space-4: 16px;
+  --gesso-space-6: 24px;
+  --gesso-space-8: 32px;
+  --gesso-space-12: 48px;
+  --gesso-space-16: 64px;
+  --gesso-space-24: 96px;
+  --gesso-space-32: 128px;
+
+  /* ---- Layout ---- */
+  --container-max-width: 1280px;
+  --outer-margin: 64px;
+  --section-padding: 80px;
+  --grid-columns: 12;
+  --grid-gutter: 24px;
+}
