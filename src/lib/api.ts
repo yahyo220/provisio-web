@@ -1,4 +1,4 @@
-import { formatOrderDate, formatRelative, initialsOf } from './format'
+import { formatMoney, formatOrderDate, formatRelative, initialsOf } from './format'
 import { placeholderImage, type OrderLineItem } from './data'
 import { supabase } from './supabase'
 import type { CustomerRow, DeliveryRow, DeliveryStatus, OrderRow, OrderStatus, PaymentStatus, ProductRow, StockStatus } from './types'
@@ -39,7 +39,7 @@ export async function fetchAll(): Promise<FetchedData> {
     name: row.name,
     sku: row.sku,
     category: row.category,
-    price: `$${Number(row.price).toFixed(2)}`,
+    price: formatMoney(Number(row.price)),
     unit: row.unit,
     stock: row.stock as StockStatus,
     active: row.active,
@@ -71,7 +71,7 @@ export async function fetchAll(): Promise<FetchedData> {
       meta: customer ? `${customer.type} · ${customer.location ?? ''}`.replace(/ · $/, '') : '—',
       date: formatOrderDate(row.created_at),
       createdAt: row.created_at,
-      total: `$${total.toFixed(2)}`,
+      total: formatMoney(total),
       deliveryFee: Number(row.delivery_fee ?? 0),
       payment: row.payment as PaymentStatus,
       status: row.status as OrderStatus,
@@ -86,7 +86,7 @@ export async function fetchAll(): Promise<FetchedData> {
     contact: row.contact || '—',
     location: row.location || '—',
     orders: ordersByCustomer.get(row.id) ?? 0,
-    spent: `$${(spentByCustomer.get(row.id) ?? 0).toFixed(2)}`,
+    spent: formatMoney(spentByCustomer.get(row.id) ?? 0),
     status: row.status as CustomerRow['status'],
     initials: initialsOf(row.name),
   }))
@@ -143,7 +143,7 @@ export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
   const dbPatch: Record<string, unknown> = {}
   if (patch.name !== undefined) dbPatch.name = patch.name
   if (patch.category !== undefined) dbPatch.category = patch.category
-  if (patch.price !== undefined) dbPatch.price = Number(String(patch.price).replace('$', ''))
+  if (patch.price !== undefined) dbPatch.price = Number(String(patch.price).replace(/[^\d.]/g, ''))
   if (patch.unit !== undefined) dbPatch.unit = patch.unit
   if (patch.stock !== undefined) dbPatch.stock = patch.stock
   if (patch.active !== undefined) dbPatch.active = patch.active

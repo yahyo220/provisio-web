@@ -9,6 +9,7 @@ import { useLanguage } from '../i18n/LanguageContext'
 import { fetchOrderItems, updateOrderItemQty } from '../lib/api'
 import type { OrderLineItem } from '../lib/data'
 import { orderTimeline, relatedOrders } from '../lib/data'
+import { formatMoney } from '../lib/format'
 import { supabase } from '../lib/supabase'
 import type { OrderRow, OrderStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
@@ -182,8 +183,8 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                         </div>
                       </td>
                       <td className="num">{unit(line.unit)}</td>
-                      <td className="num">${line.unitPrice.toFixed(2)}</td>
-                      <td className="num">${(line.qty * line.unitPrice).toFixed(2)}</td>
+                      <td className="num">{formatMoney(line.unitPrice)}</td>
+                      <td className="num">{formatMoney(line.qty * line.unitPrice)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -194,12 +195,12 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
               <div className="t-block">
                 <div className="t-label">{t('orderDetail.deliveryFee')}</div>
                 <div className="t-value" style={{ fontSize: 'var(--gesso-text-lg)' }}>
-                  ${order.deliveryFee.toFixed(2)}
+                  {formatMoney(order.deliveryFee)}
                 </div>
               </div>
               <div className="t-block">
                 <div className="t-label">{t('orderDetail.orderTotal')}</div>
-                <div className="t-value">${total.toFixed(2)}</div>
+                <div className="t-value">{formatMoney(total)}</div>
               </div>
             </div>
           </Card>

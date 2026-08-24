@@ -147,15 +147,15 @@ export default function AddProduct() {
             <div className="field-row">
               <div className="field">
                 <label htmlFor="p-price">{t('common.price')}</label>
-                <div className="price-input">
-                  <span className="prefix">$</span>
+                <div className="price-input suffixed">
                   <input
                     id="p-price"
                     type="text"
-                    placeholder="0.00"
+                    placeholder="0"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                   />
+                  <span className="suffix">сум</span>
                 </div>
               </div>
               <div className="field">

@@ -19,7 +19,7 @@ const PLACEHOLDER_SVG =
 export const placeholderImage = `data:image/svg+xml;utf8,${encodeURIComponent(PLACEHOLDER_SVG)}`
 
 export const kpis = [
-  { label: "Today's revenue", value: '$0', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'package' as const },
+  { label: "Today's revenue", value: '0 сум', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'package' as const },
   { label: "Today's orders", value: '0', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'box' as const },
   { label: 'Pending orders', value: '0', delta: '0', ref: 'since noon', direction: 'up' as const, icon: 'alert' as const },
   { label: 'In delivery', value: '0', delta: '0', ref: 'since noon', direction: 'up' as const, icon: 'package' as const },
@@ -36,7 +36,7 @@ export const categoryBreakdownByRange: Record<RevenueRange, { name: string; pct:
   '1Y': [],
 }
 
-const EMPTY_CHART = { stat: '$0', points: '0,219 640,219', axis: ['', '', '', '', '', '', '', ''] }
+const EMPTY_CHART = { stat: '0 сум', points: '0,219 640,219', axis: ['', '', '', '', '', '', '', ''] }
 
 export const revenueByRange: Record<
   RevenueRange,
@@ -88,7 +88,7 @@ export const customerKpis = [
   { label: 'Total customers', value: '0', delta: '0', ref: 'this month', direction: 'up' as const },
   { label: 'New this month', value: '0', delta: '0', ref: 'vs last month', direction: 'up' as const },
   { label: 'Active accounts', value: '0', delta: '0', ref: 'vs last month', direction: 'up' as const },
-  { label: 'Avg. order value', value: '$0', delta: '0%', ref: 'vs last month', direction: 'up' as const },
+  { label: 'Avg. order value', value: '0 сум', delta: '0%', ref: 'vs last month', direction: 'up' as const },
 ]
 
 export const customers: CustomerRow[] = []
@@ -109,9 +109,9 @@ export const deliveries: DeliveryRow[] = []
 /* ---------------------------------- Analytics ---------------------------------- */
 
 const EMPTY_ANALYTICS_KPIS = [
-  { label: 'Total revenue', value: '$0', delta: '0%', ref: 'vs last month', direction: 'up' as const },
+  { label: 'Total revenue', value: '0 сум', delta: '0%', ref: 'vs last month', direction: 'up' as const },
   { label: 'Total orders', value: '0', delta: '0%', ref: 'vs last month', direction: 'up' as const },
-  { label: 'Avg. order value', value: '$0', delta: '0%', ref: 'vs last month', direction: 'up' as const },
+  { label: 'Avg. order value', value: '0 сум', delta: '0%', ref: 'vs last month', direction: 'up' as const },
   { label: 'Repeat customer rate', value: '0%', delta: '0%', ref: 'vs last month', direction: 'up' as const },
 ]
 

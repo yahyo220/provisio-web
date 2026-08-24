@@ -160,9 +160,9 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
             <div className="field-row">
               <div className="field">
                 <label htmlFor="pd-price">{t('common.price')}</label>
-                <div className="price-input">
-                  <span className="prefix">$</span>
+                <div className="price-input suffixed">
                   <input id="pd-price" type="text" value={price} onChange={(e) => setPrice(e.target.value)} />
+                  <span className="suffix">сум</span>
                 </div>
               </div>
               <div className="field">

@@ -19,6 +19,7 @@ import {
   products as mockProducts,
 } from '../lib/data'
 import { supabase } from '../lib/supabase'
+import { formatMoney } from '../lib/format'
 import type { CustomerRow, CustomerStatus, DeliveryRow, OrderRow, OrderStatus, ProductRow, StockStatus } from '../lib/types'
 
 export interface NewProductInput {
@@ -143,7 +144,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               name: input.name,
               sku: input.sku,
               category: input.category,
-              price: `$${input.price.toFixed(2)}`,
+              price: formatMoney(input.price),
               unit: input.unit,
               stock: input.stock,
               active: input.active,

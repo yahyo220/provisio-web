@@ -441,6 +441,22 @@
   padding-left: 28px;
 }
 
+.price-input .suffix {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: var(--gesso-fg-muted);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.price-input.suffixed input {
+  padding-left: 16px;
+  padding-right: 56px;
+}
+
 .form-footer {
   display: flex;
   align-items: center;

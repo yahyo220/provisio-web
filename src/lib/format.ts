@@ -27,6 +27,18 @@ export function formatOrderDate(iso: string): string {
   })
 }
 
+/** Matches the app's formatMoney() exactly: space-separated thousands + "сум" suffix. */
+export function formatMoney(amount: number): string {
+  const rounded = Math.round(amount)
+  const s = Math.abs(rounded).toString()
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 === 0) out += ' '
+    out += s[i]
+  }
+  return `${rounded < 0 ? '-' : ''}${out} сум`
+}
+
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || 'NA'
