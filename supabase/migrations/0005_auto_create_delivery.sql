@@ -5,6 +5,9 @@
 -- website) never got a `deliveries` row, so there was nothing to assign a
 -- courier to on the Deliveries page. This adds a trigger so every new order
 -- gets one automatically, and backfills existing orders that don't have one.
+--
+-- Safe to re-run: the trigger is guarded by drop-if-exists, and the backfill
+-- only inserts rows for orders that still don't have one.
 
 create or replace function create_delivery_for_order() returns trigger as $$
 begin
@@ -14,11 +17,11 @@ begin
 end;
 $$ language plpgsql security definer set search_path = public;
 
+drop trigger if exists orders_create_delivery on orders;
 create trigger orders_create_delivery
   after insert on orders
   for each row execute function create_delivery_for_order();
 
--- Backfill: give every existing order without one a delivery row too.
 insert into deliveries (order_id, address, status)
 select o.id, o.delivery_address, 'scheduled'
 from orders o

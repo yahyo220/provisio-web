@@ -8,7 +8,10 @@
 --      'delivered' too, so the website's Orders page reflects it — but
 --      couriers can't write to `orders` directly (admin-only), so this is
 --      a trigger, not something the app has to orchestrate itself.
+--
+-- Safe to re-run: every create is guarded by a drop-if-exists first.
 
+drop policy if exists "courier select customers on own deliveries" on customers;
 create policy "courier select customers on own deliveries" on customers for select
   using (exists (
     select 1 from orders o
@@ -25,6 +28,7 @@ begin
 end;
 $$ language plpgsql security definer set search_path = public;
 
+drop trigger if exists deliveries_sync_order_status on deliveries;
 create trigger deliveries_sync_order_status
   after update on deliveries
   for each row execute function sync_order_status_from_delivery();
