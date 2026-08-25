@@ -2,18 +2,20 @@ import { LogOut, Settings, User } from 'lucide-react'
 import { useState } from 'react'
 import { useLanguage } from '../../i18n/LanguageContext'
 import useClickOutside from '../../lib/useClickOutside'
+import { useAuth } from '../../store/AuthContext'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 
 export default function AccountMenu() {
   const { t, lang, setLang } = useLanguage()
+  const { session, signOut } = useAuth()
   const [open, setOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const ref = useClickOutside<HTMLDivElement>(open, () => setOpen(false))
 
-  const [name, setName] = useState('Marina Kovalenko')
-  const [email, setEmail] = useState('marina@provisio.io')
+  const [name, setName] = useState('Admin')
+  const [email, setEmail] = useState(session?.user.email ?? '')
   const [role, setRole] = useState('Operations manager')
 
   const [emailNotifications, setEmailNotifications] = useState(true)
@@ -93,7 +95,7 @@ export default function AccountMenu() {
 
           <div className="account-divider" />
 
-          <button type="button" className="account-item" role="menuitem">
+          <button type="button" className="account-item" role="menuitem" onClick={() => signOut()}>
             <LogOut />
             {t('account.logOut')}
           </button>

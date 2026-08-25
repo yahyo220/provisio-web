@@ -151,7 +151,23 @@ export default function Customers() {
                     <div className="prod-cell">
                       <div className="avatar">{customer.initials}</div>
                       <div>
-                        <div className="prod-name">{customer.name}</div>
+                        <div className="prod-name" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {customer.name}
+                          {customer.approvalStatus === 'pending' && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                color: '#a35b00',
+                                background: 'rgba(200,130,0,0.12)',
+                                borderRadius: 'var(--gesso-radius-full)',
+                                padding: '2px 8px',
+                              }}
+                            >
+                              Ожидает
+                            </span>
+                          )}
+                        </div>
                         <div className="prod-sku">{customer.contact}</div>
                       </div>
                     </div>

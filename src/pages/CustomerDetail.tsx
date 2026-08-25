@@ -29,6 +29,12 @@ export default function CustomerDetail() {
   return <CustomerDetailForm key={customer.id} customer={customer} />
 }
 
+const PRICE_TIER_LABEL: Record<CustomerRow['priceTier'], string> = {
+  with_price: 'С ценой',
+  no_price: 'Без цены (скрыта)',
+  external: 'Для внешних клиентов',
+}
+
 function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const { orders, updateCustomer } = useData()
   const { t, customerType } = useLanguage()
@@ -38,13 +44,24 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const [location, setLocation] = useState(customer.location)
   const [type, setType] = useState(customer.type)
   const [active, setActive] = useState(customer.status === 'active')
+  const [priceTier, setPriceTier] = useState(customer.priceTier)
   const [saved, setSaved] = useState(false)
+  const [approving, setApproving] = useState(false)
 
   const customerOrders = orders.filter((o) => o.customerId === customer.id)
 
   function handleSave() {
-    updateCustomer(customer.id, { name, contact, location, type, status: active ? 'active' : 'inactive' })
+    updateCustomer(customer.id, { name, contact, location, type, status: active ? 'active' : 'inactive', priceTier })
     setSaved(true)
+  }
+
+  async function handleApprove() {
+    setApproving(true)
+    try {
+      await updateCustomer(customer.id, { approvalStatus: 'approved', priceTier })
+    } finally {
+      setApproving(false)
+    }
   }
 
   return (
@@ -144,6 +161,50 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
         </div>
 
         <div className="detail-col">
+          {customer.hasLogin && (
+            <Card>
+              <p className="section-label">Доступ в приложение</p>
+              <div className="status-row" style={{ paddingTop: 0, marginTop: 0, borderTop: 'none' }}>
+                <div>
+                  <div className="lbl">
+                    {customer.approvalStatus === 'approved'
+                      ? 'Одобрен'
+                      : customer.approvalStatus === 'pending'
+                        ? 'Ожидает подтверждения'
+                        : 'Заблокирован'}
+                  </div>
+                  <div className="sub">
+                    {customer.approvalStatus === 'approved'
+                      ? 'Может оформлять заказы в приложении.'
+                      : 'Зарегистрировался, но пока не может заказывать.'}
+                  </div>
+                </div>
+                {customer.approvalStatus !== 'approved' && (
+                  <Button variant="primary" onClick={handleApprove} disabled={approving}>
+                    {approving ? 'Одобряем…' : 'Одобрить'}
+                  </Button>
+                )}
+              </div>
+
+              <div className="field" style={{ marginTop: 16 }}>
+                <label htmlFor="cd-price-tier">Тип цены для клиента</label>
+                <div className="select-wrap">
+                  <select
+                    id="cd-price-tier"
+                    value={priceTier}
+                    onChange={(e) => setPriceTier(e.target.value as CustomerRow['priceTier'])}
+                  >
+                    {(Object.keys(PRICE_TIER_LABEL) as CustomerRow['priceTier'][]).map((tier) => (
+                      <option key={tier} value={tier}>
+                        {PRICE_TIER_LABEL[tier]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </Card>
+          )}
+
           <Card>
             <div className="status-row" style={{ paddingTop: 0, marginTop: 0, borderTop: 'none' }}>
               <div>
@@ -162,14 +223,14 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
                   <Phone style={{ width: 14, height: 14, display: 'inline', marginRight: 6 }} />
                   {t('common.phone')}
                 </span>
-                <span className="v">—</span>
+                <span className="v">{customer.phone || '—'}</span>
               </div>
               <div className="info-row">
                 <span className="k">
                   <Mail style={{ width: 14, height: 14, display: 'inline', marginRight: 6 }} />
                   {t('common.email')}
                 </span>
-                <span className="v">—</span>
+                <span className="v">{customer.email || '—'}</span>
               </div>
             </div>
           </Card>

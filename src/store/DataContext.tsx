@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import {
   assignDriverToDelivery,
+  createCourierAccount,
   deleteProductRow,
   fetchAll,
   insertCustomer,
@@ -20,7 +21,7 @@ import {
 } from '../lib/data'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
-import type { CustomerRow, CustomerStatus, DeliveryRow, OrderRow, OrderStatus, ProductRow, StockStatus } from '../lib/types'
+import type { CustomerRow, CustomerStatus, DeliveryRow, DriverRow, OrderRow, OrderStatus, ProductRow, StockStatus } from '../lib/types'
 
 export interface NewProductInput {
   name: string
@@ -60,8 +61,10 @@ interface DataContextValue {
 
   deliveries: DeliveryRow[]
   drivers: string[]
+  driverRows: DriverRow[]
   assignDriver: (deliveryId: string, driver: string) => Promise<void>
   updateDelivery: (id: string, patch: Partial<DeliveryRow>) => Promise<void>
+  addCourier: (input: { name: string; phone: string; email: string; password: string }) => Promise<void>
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
@@ -74,6 +77,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [customers, setCustomers] = useState<CustomerRow[]>(connected ? [] : mockCustomers)
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>(connected ? [] : mockDeliveries)
   const [drivers, setDrivers] = useState<string[]>(connected ? [] : mockDrivers)
+  const [driverRows, setDriverRows] = useState<DriverRow[]>([])
   const [loading, setLoading] = useState(connected)
 
   const refresh = useCallback(async () => {
@@ -84,6 +88,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setCustomers(data.customers)
     setDeliveries(data.deliveries)
     setDrivers(data.drivers)
+    setDriverRows(data.driverRows)
     setLoading(false)
   }, [connected])
 
@@ -186,11 +191,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
               name: input.name,
               type: input.type,
               contact: input.contact,
+              phone: '',
+              email: '',
               location: input.location,
               orders: 0,
               spent: '$0.00',
               status: 'active' as CustomerStatus,
               initials: input.name.slice(0, 2).toUpperCase(),
+              approvalStatus: 'approved',
+              priceTier: 'with_price',
+              hasLogin: false,
             },
             ...prev,
           ])
@@ -210,6 +220,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       deliveries,
       drivers,
+      driverRows,
+      addCourier: async (input) => {
+        if (!connected) return
+        await createCourierAccount(input)
+        await refresh()
+      },
       assignDriver: async (deliveryId, driver) => {
         if (!connected) {
           setDeliveries((prev) => prev.map((d) => (d.id === deliveryId ? { ...d, driver } : d)))
@@ -227,7 +243,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await refresh()
       },
     }),
-    [connected, loading, products, orders, customers, deliveries, drivers, refresh],
+    [connected, loading, products, orders, customers, deliveries, drivers, driverRows, refresh],
   )
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>

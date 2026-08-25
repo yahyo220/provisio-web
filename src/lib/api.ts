@@ -1,7 +1,19 @@
 import { formatMoney, formatOrderDate, formatRelative, initialsOf } from './format'
 import { placeholderImage, type OrderLineItem } from './data'
 import { supabase } from './supabase'
-import type { CustomerRow, DeliveryRow, DeliveryStatus, OrderRow, OrderStatus, PaymentStatus, ProductRow, StockStatus } from './types'
+import type {
+  ApprovalStatus,
+  CustomerRow,
+  DeliveryRow,
+  DeliveryStatus,
+  DriverRow,
+  OrderRow,
+  OrderStatus,
+  PaymentStatus,
+  PriceTier,
+  ProductRow,
+  StockStatus,
+} from './types'
 
 function assertClient() {
   if (!supabase) throw new Error('Supabase is not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
@@ -14,6 +26,7 @@ export interface FetchedData {
   orders: OrderRow[]
   deliveries: DeliveryRow[]
   drivers: string[]
+  driverRows: DriverRow[]
 }
 
 /** Pulls every table in parallel and joins everything client-side — simple and
@@ -84,11 +97,24 @@ export async function fetchAll(): Promise<FetchedData> {
     name: row.name,
     type: row.type,
     contact: row.contact || '—',
+    phone: row.phone || '',
+    email: row.email || '',
     location: row.location || '—',
     orders: ordersByCustomer.get(row.id) ?? 0,
     spent: formatMoney(spentByCustomer.get(row.id) ?? 0),
     status: row.status as CustomerRow['status'],
     initials: initialsOf(row.name),
+    approvalStatus: (row.approval_status ?? 'approved') as ApprovalStatus,
+    priceTier: (row.price_tier ?? 'no_price') as PriceTier,
+    hasLogin: Boolean(row.auth_user_id),
+  }))
+
+  const driverRows: DriverRow[] = (driversRes.data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    phone: row.phone || '',
+    active: row.active ?? true,
+    hasLogin: Boolean(row.auth_user_id),
   }))
 
   const driversById = new Map((driversRes.data ?? []).map((d) => [d.id, d]))
@@ -111,7 +137,7 @@ export async function fetchAll(): Promise<FetchedData> {
 
   const drivers = (driversRes.data ?? []).map((d) => d.name)
 
-  return { products, customers, orders, deliveries, drivers }
+  return { products, customers, orders, deliveries, drivers, driverRows }
 }
 
 export async function insertProduct(product: {
@@ -182,8 +208,25 @@ export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>)
   if (patch.contact !== undefined) dbPatch.contact = patch.contact
   if (patch.location !== undefined) dbPatch.location = patch.location
   if (patch.status !== undefined) dbPatch.status = patch.status
+  if (patch.approvalStatus !== undefined) dbPatch.approval_status = patch.approvalStatus
+  if (patch.priceTier !== undefined) dbPatch.price_tier = patch.priceTier
   const { error } = await db.from('customers').update(dbPatch).eq('id', id)
   if (error) throw error
+}
+
+/** Calls the `create-account` edge function (service-role) to give a courier
+ * a real login. Only succeeds if the caller is signed in as an admin. */
+export async function createCourierAccount(input: { name: string; phone: string; email: string; password: string }) {
+  const db = assertClient()
+  const { data: sessionData } = await db.auth.getSession()
+  if (!sessionData.session) throw new Error('Not signed in.')
+
+  const { data, error } = await db.functions.invoke('create-account', {
+    body: { role: 'courier', name: input.name, phone: input.phone, email: input.email, password: input.password },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
 }
 
 export async function updateDeliveryRow(id: string, patch: Partial<DeliveryRow>) {

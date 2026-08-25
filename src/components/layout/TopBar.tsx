@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { key: 'nav.products', to: '/products' },
   { key: 'nav.customers', to: '/customers' },
   { key: 'nav.deliveries', to: '/deliveries' },
+  { key: 'nav.couriers', to: '/couriers' },
   { key: 'nav.analytics', to: '/analytics' },
 ]
 
