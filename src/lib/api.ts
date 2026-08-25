@@ -290,3 +290,68 @@ export async function updateOrderItemQty(itemId: string, qty: number) {
   const { error } = await db.from('order_items').update({ qty }).eq('id', itemId)
   if (error) throw error
 }
+
+export interface OrderFeedbackRow {
+  id: string
+  message: string
+  createdAt: string
+}
+
+export async function fetchOrderFeedback(orderId: string): Promise<OrderFeedbackRow[]> {
+  const db = assertClient()
+  const { data, error } = await db
+    .from('order_feedback')
+    .select('id, message, created_at')
+    .eq('order_id', orderId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []).map((row) => ({ id: row.id, message: row.message, createdAt: row.created_at }))
+}
+
+export interface SupportMessageRow {
+  id: string
+  customerId: string
+  sender: 'customer' | 'admin'
+  message: string
+  createdAt: string
+}
+
+export async function fetchSupportThreads(): Promise<{ customerId: string; lastMessage: string; lastAt: string; unread: boolean }[]> {
+  const db = assertClient()
+  const { data, error } = await db.from('support_messages').select('customer_id, sender, message, created_at').order('created_at', { ascending: true })
+  if (error) throw error
+  const byCustomer = new Map<string, { lastMessage: string; lastAt: string; unread: boolean }>()
+  for (const row of data ?? []) {
+    byCustomer.set(row.customer_id, {
+      lastMessage: row.message,
+      lastAt: row.created_at,
+      unread: row.sender === 'customer',
+    })
+  }
+  return Array.from(byCustomer.entries())
+    .map(([customerId, v]) => ({ customerId, ...v }))
+    .sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1))
+}
+
+export async function fetchSupportMessages(customerId: string): Promise<SupportMessageRow[]> {
+  const db = assertClient()
+  const { data, error } = await db
+    .from('support_messages')
+    .select('id, customer_id, sender, message, created_at')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    customerId: row.customer_id,
+    sender: row.sender as 'customer' | 'admin',
+    message: row.message,
+    createdAt: row.created_at,
+  }))
+}
+
+export async function sendSupportMessage(customerId: string, message: string) {
+  const db = assertClient()
+  const { error } = await db.from('support_messages').insert({ customer_id: customerId, sender: 'admin', message })
+  if (error) throw error
+}

@@ -6,7 +6,7 @@ import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
 import StatusPill from '../components/ui/StatusPill'
 import { useLanguage } from '../i18n/LanguageContext'
-import { fetchOrderItems, updateOrderItemQty } from '../lib/api'
+import { fetchOrderFeedback, fetchOrderItems, updateOrderItemQty, type OrderFeedbackRow } from '../lib/api'
 import type { OrderLineItem } from '../lib/data'
 import { orderTimeline, relatedOrders } from '../lib/data'
 import { formatMoney } from '../lib/format'
@@ -44,6 +44,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
   const [lineItems, setLineItems] = useState<OrderLineItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(Boolean(supabase))
   const [status, setStatus] = useState<OrderStatus>(order.status)
+  const [feedback, setFeedback] = useState<OrderFeedbackRow[]>([])
 
   useEffect(() => {
     if (!supabase) {
@@ -59,6 +60,19 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
       .finally(() => {
         if (!cancelled) setItemsLoading(false)
       })
+    return () => {
+      cancelled = true
+    }
+  }, [order.id])
+
+  useEffect(() => {
+    if (!supabase) return
+    let cancelled = false
+    fetchOrderFeedback(order.id)
+      .then((rows) => {
+        if (!cancelled) setFeedback(rows)
+      })
+      .catch((err) => console.error(err))
     return () => {
       cancelled = true
     }
@@ -204,6 +218,29 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
               </div>
             </div>
           </Card>
+
+          {feedback.length > 0 && (
+            <Card>
+              <p className="section-label">Отзыв клиента</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {feedback.map((f) => (
+                  <div
+                    key={f.id}
+                    style={{
+                      background: 'var(--gesso-surface-recessed, rgba(0,0,0,0.03))',
+                      borderRadius: 'var(--gesso-radius-md)',
+                      padding: '12px 16px',
+                    }}
+                  >
+                    <div style={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>{f.message}</div>
+                    <div style={{ fontSize: 12, color: 'var(--gesso-fg-muted)', marginTop: 6 }}>
+                      {new Date(f.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card>
             <p className="section-label">{t('orderDetail.orderTimeline')}</p>
