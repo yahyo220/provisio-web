@@ -39,7 +39,8 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
 
   const [name, setName] = useState(product.name)
   const [productCategory, setProductCategory] = useState(product.category)
-  const [price, setPrice] = useState(product.price.replace('$', ''))
+  const [price, setPrice] = useState(product.price.replace(/[^\d.]/g, ''))
+  const [priceExternal, setPriceExternal] = useState(product.priceExternal.replace(/[^\d.]/g, ''))
   const [productUnit, setProductUnit] = useState(product.unit)
   const [stock, setStock] = useState<StockStatus>(product.stock)
   const [active, setActive] = useState(product.active)
@@ -51,7 +52,8 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
     updateProduct(product.id, {
       name,
       category: productCategory,
-      price: `$${Number(price || 0).toFixed(2)}`,
+      price: String(Number(price || 0)),
+      priceExternal,
       unit: productUnit,
       stock,
       active,
@@ -168,6 +170,20 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               <div className="field">
                 <label htmlFor="pd-unit">{t('common.unit')}</label>
                 <input id="pd-unit" type="text" value={productUnit} onChange={(e) => setProductUnit(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="field">
+              <label htmlFor="pd-price-ext">Цена для внешних клиентов (необязательно)</label>
+              <div className="price-input suffixed">
+                <input
+                  id="pd-price-ext"
+                  type="text"
+                  placeholder="Как обычная цена, если не указано"
+                  value={priceExternal}
+                  onChange={(e) => setPriceExternal(e.target.value)}
+                />
+                <span className="suffix">сум</span>
               </div>
             </div>
 

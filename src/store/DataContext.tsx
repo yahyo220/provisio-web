@@ -28,6 +28,7 @@ export interface NewProductInput {
   sku: string
   category: string
   price: number
+  priceExternal?: number | null
   unit: string
   stock: StockStatus
   active: boolean
@@ -150,6 +151,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               sku: input.sku,
               category: input.category,
               price: formatMoney(input.price),
+              priceExternal: '',
               unit: input.unit,
               stock: input.stock,
               active: input.active,

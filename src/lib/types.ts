@@ -36,6 +36,8 @@ export interface ProductRow {
   sku: string
   category: string
   price: string
+  /** Optional wholesale/external price shown only to 'external' price_tier customers. Empty string = not set. */
+  priceExternal: string
   unit: string
   stock: StockStatus
   active: boolean

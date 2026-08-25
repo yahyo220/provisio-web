@@ -26,6 +26,7 @@ export default function AddProduct() {
   const [selectedCategory, setSelectedCategory] = useState(CATEGORIES[0])
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
+  const [priceExternal, setPriceExternal] = useState('')
 
   async function handleSave(andAddAnother: boolean) {
     if (!name.trim() || !sku.trim()) return
@@ -34,6 +35,7 @@ export default function AddProduct() {
       sku,
       category: selectedCategory,
       price: Number(price || 0),
+      priceExternal: priceExternal.trim() ? Number(priceExternal) : null,
       unit: selectedUnit,
       stock,
       active,
@@ -44,6 +46,7 @@ export default function AddProduct() {
       setDescription('')
       setSku('')
       setPrice('')
+      setPriceExternal('')
     } else {
       navigate('/products')
     }
@@ -161,6 +164,20 @@ export default function AddProduct() {
               <div className="field">
                 <label htmlFor="p-moq">{t('addProduct.minOrderQty')}</label>
                 <input id="p-moq" type="text" placeholder="1" />
+              </div>
+            </div>
+
+            <div className="field">
+              <label htmlFor="p-price-ext">Цена для внешних клиентов (необязательно)</label>
+              <div className="price-input suffixed">
+                <input
+                  id="p-price-ext"
+                  type="text"
+                  placeholder="Как обычная цена, если не указано"
+                  value={priceExternal}
+                  onChange={(e) => setPriceExternal(e.target.value)}
+                />
+                <span className="suffix">сум</span>
               </div>
             </div>
 

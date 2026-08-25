@@ -53,6 +53,7 @@ export async function fetchAll(): Promise<FetchedData> {
     sku: row.sku,
     category: row.category,
     price: formatMoney(Number(row.price)),
+    priceExternal: row.price_external != null ? formatMoney(Number(row.price_external)) : '',
     unit: row.unit,
     stock: row.stock as StockStatus,
     active: row.active,
@@ -145,6 +146,7 @@ export async function insertProduct(product: {
   sku: string
   category: string
   price: number
+  priceExternal?: number | null
   unit: string
   stock: StockStatus
   active: boolean
@@ -156,6 +158,7 @@ export async function insertProduct(product: {
     sku: product.sku,
     category: product.category,
     price: product.price,
+    price_external: product.priceExternal ?? null,
     unit: product.unit,
     stock: product.stock,
     active: product.active,
@@ -170,6 +173,10 @@ export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
   if (patch.name !== undefined) dbPatch.name = patch.name
   if (patch.category !== undefined) dbPatch.category = patch.category
   if (patch.price !== undefined) dbPatch.price = Number(String(patch.price).replace(/[^\d.]/g, ''))
+  if (patch.priceExternal !== undefined) {
+    const cleaned = String(patch.priceExternal).replace(/[^\d.]/g, '')
+    dbPatch.price_external = cleaned ? Number(cleaned) : null
+  }
   if (patch.unit !== undefined) dbPatch.unit = patch.unit
   if (patch.stock !== undefined) dbPatch.stock = patch.stock
   if (patch.active !== undefined) dbPatch.active = patch.active
