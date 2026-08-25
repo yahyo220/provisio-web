@@ -5,11 +5,11 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
-import { placeholderImage } from '../lib/data'
+import { PRODUCT_UNITS, placeholderImage } from '../lib/data'
 import type { StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
-const UNITS = ['kg', 'gram', 'box', 'piece', 'bottle', 'bunch', 'package']
+const UNITS = PRODUCT_UNITS
 const CATEGORIES = ['Vegetables', 'Fruits', 'Dairy', 'Meat', 'Bread', 'Oil', 'Nuts', 'Eggs', 'Cleaning', 'Herbs']
 const STOCK_OPTIONS: StockStatus[] = ['in', 'low', 'out']
 
@@ -19,7 +19,7 @@ export default function AddProduct() {
   const navigate = useNavigate()
 
   const [active, setActive] = useState(true)
-  const [selectedUnit, setSelectedUnit] = useState('box')
+  const [selectedUnits, setSelectedUnits] = useState<string[]>(['box'])
   const [stock, setStock] = useState<StockStatus>('in')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -36,7 +36,8 @@ export default function AddProduct() {
       category: selectedCategory,
       price: Number(price || 0),
       priceExternal: priceExternal.trim() ? Number(priceExternal) : null,
-      unit: selectedUnit,
+      unit: selectedUnits[0] ?? 'box',
+      units: selectedUnits,
       stock,
       active,
       imageUrl: placeholderImage,
@@ -182,20 +183,32 @@ export default function AddProduct() {
             </div>
 
             <div className="field">
-              <label>{t('common.unit')}</label>
-              <div className="chip-row" role="listbox" aria-label={t('common.unit')}>
-                {UNITS.map((u) => (
-                  <button
-                    key={u}
-                    type="button"
-                    className="chip"
-                    role="option"
-                    aria-selected={selectedUnit === u}
-                    onClick={() => setSelectedUnit(u)}
-                  >
-                    {unit(u)}
-                  </button>
-                ))}
+              <label>{t('common.unit')} — можно выбрать до 3, покупатель выберет одну при заказе</label>
+              <div className="chip-row" role="listbox" aria-label={t('common.unit')} aria-multiselectable="true">
+                {UNITS.map((u) => {
+                  const selected = selectedUnits.includes(u)
+                  return (
+                    <button
+                      key={u}
+                      type="button"
+                      className="chip"
+                      role="option"
+                      aria-selected={selected}
+                      onClick={() =>
+                        setSelectedUnits((prev) => {
+                          if (prev.includes(u)) {
+                            const next = prev.filter((x) => x !== u)
+                            return next.length > 0 ? next : prev // keep at least one
+                          }
+                          if (prev.length >= 3) return prev // cap at 3
+                          return [...prev, u]
+                        })
+                      }
+                    >
+                      {unit(u)}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 

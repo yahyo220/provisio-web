@@ -55,6 +55,7 @@ export async function fetchAll(): Promise<FetchedData> {
     price: formatMoney(Number(row.price)),
     priceExternal: row.price_external != null ? formatMoney(Number(row.price_external)) : '',
     unit: row.unit,
+    units: Array.isArray(row.units) ? row.units : [],
     stock: row.stock as StockStatus,
     active: row.active,
     updated: formatRelative(row.updated_at),
@@ -148,6 +149,7 @@ export async function insertProduct(product: {
   price: number
   priceExternal?: number | null
   unit: string
+  units?: string[]
   stock: StockStatus
   active: boolean
   imageUrl?: string
@@ -160,6 +162,7 @@ export async function insertProduct(product: {
     price: product.price,
     price_external: product.priceExternal ?? null,
     unit: product.unit,
+    units: product.units && product.units.length > 0 ? product.units : null,
     stock: product.stock,
     active: product.active,
     image_url: product.imageUrl ?? null,
@@ -178,6 +181,7 @@ export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
     dbPatch.price_external = cleaned ? Number(cleaned) : null
   }
   if (patch.unit !== undefined) dbPatch.unit = patch.unit
+  if (patch.units !== undefined) dbPatch.units = patch.units.length > 0 ? patch.units : null
   if (patch.stock !== undefined) dbPatch.stock = patch.stock
   if (patch.active !== undefined) dbPatch.active = patch.active
   const { error } = await db.from('products').update(dbPatch).eq('id', id)
@@ -270,6 +274,12 @@ export async function assignDriverToDelivery(deliveryId: string, driverName: str
 export async function updateOrderStatus(id: string, status: string) {
   const db = assertClient()
   const { error } = await db.from('orders').update({ status }).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteOrderRow(id: string) {
+  const db = assertClient()
+  const { error } = await db.from('orders').delete().eq('id', id)
   if (error) throw error
 }
 

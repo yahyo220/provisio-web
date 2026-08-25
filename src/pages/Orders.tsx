@@ -1,9 +1,10 @@
-import { ArrowDown, ArrowLeft, ArrowUp, Calendar, CreditCard, Download, Pencil, Plus } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, Calendar, CreditCard, Download, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
+import Modal from '../components/ui/Modal'
 import Pagination from '../components/ui/Pagination'
 import PaymentLabel from '../components/ui/PaymentLabel'
 import StatusBadge from '../components/ui/StatusBadge'
@@ -18,7 +19,7 @@ const PAYMENT_STATUSES: PaymentStatus[] = ['paid', 'pending', 'overdue']
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 export default function Orders() {
-  const { orders } = useData()
+  const { orders, removeOrder } = useData()
   const { t } = useLanguage()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<string | null>(null)
@@ -26,6 +27,8 @@ export default function Orders() {
   const [thisWeek, setThisWeek] = useState(false)
   const [sortAsc, setSortAsc] = useState(false)
   const [page, setPage] = useState(1)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; orderNumber: number } | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const statusOptions = ORDER_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))
   const paymentOptions = PAYMENT_STATUSES.map((p) => ({ value: p, label: t(`payment.${p}`) }))
@@ -63,6 +66,17 @@ export default function Orders() {
 
   function resetPage() {
     setPage(1)
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await removeOrder(deleteTarget.id)
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -169,7 +183,20 @@ export default function Orders() {
               <span className="status-cell">
                 <StatusBadge status={order.status} />
               </span>
-              <span className="action-cell">
+              <span className="action-cell" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="row-action round"
+                  aria-label="Удалить заказ"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setDeleteTarget({ id: order.id, orderNumber: order.orderNumber })
+                  }}
+                  style={{ color: 'var(--gesso-error, #c02828)' }}
+                >
+                  <Trash2 />
+                </button>
                 <span className="row-action round" aria-hidden>
                   <Pencil />
                 </span>
@@ -191,6 +218,25 @@ export default function Orders() {
           nextLabel={t('common.nextPage')}
         />
       </Card>
+
+      {deleteTarget && (
+        <Modal
+          title={`Удалить заказ #${deleteTarget.orderNumber}?`}
+          onClose={() => setDeleteTarget(null)}
+          footer={
+            <>
+              <Button variant="text" onClick={() => setDeleteTarget(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button variant="danger-text" onClick={handleConfirmDelete} disabled={deleting}>
+                {deleting ? 'Удаляем…' : 'Удалить'}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 14, color: 'var(--gesso-fg-muted)' }}>Если удалите, восстановить будет нельзя.</p>
+        </Modal>
+      )}
     </>
   )
 }

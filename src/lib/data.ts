@@ -18,6 +18,10 @@ const PLACEHOLDER_SVG =
 /** Neutral "no photo yet" placeholder — used until a real image is uploaded. */
 export const placeholderImage = `data:image/svg+xml;utf8,${encodeURIComponent(PLACEHOLDER_SVG)}`
 
+/** Fixed unit vocabulary offered when adding/editing a product — a product
+ * can be tagged with up to 3 of these (see ProductRow.units). */
+export const PRODUCT_UNITS = ['kg', 'gram', 'box', 'piece', 'bottle', 'bunch', 'package']
+
 export const kpis = [
   { label: "Today's revenue", value: '0 сум', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'package' as const },
   { label: "Today's orders", value: '0', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'box' as const },

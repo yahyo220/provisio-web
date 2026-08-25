@@ -1,5 +1,5 @@
-import { ArrowUpDown, CircleCheck, Copy, Download, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ArrowUpDown, CircleCheck, Copy, Download, Pencil, Plus, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
@@ -12,14 +12,35 @@ import { useData } from '../store/DataContext'
 
 const PAGE_SIZE = 5
 
+/** Parses the small CSV shape the price import expects: header row, then
+ * sku,price[,price_external] — good enough for a spreadsheet-exported price
+ * list without pulling in a full CSV library for three columns. */
+function parsePriceCsv(text: string): { sku: string; price: number; priceExternal: number | null }[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
+  if (lines.length === 0) return []
+  const rows = lines[0].toLowerCase().includes('sku') ? lines.slice(1) : lines
+  return rows
+    .map((line) => {
+      const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
+      const sku = cols[0] ?? ''
+      const price = Number((cols[1] ?? '').replace(/[^\d.]/g, ''))
+      const priceExternalRaw = (cols[2] ?? '').replace(/[^\d.]/g, '')
+      return { sku, price, priceExternal: priceExternalRaw ? Number(priceExternalRaw) : null }
+    })
+    .filter((r) => r.sku && Number.isFinite(r.price))
+}
+
 export default function Products() {
-  const { products, toggleProductActive, removeProduct } = useData()
+  const { products, toggleProductActive, removeProduct, updateProduct } = useData()
   const { t, category, unit } = useLanguage()
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [sortByUpdated, setSortByUpdated] = useState(false)
   const [page, setPage] = useState(1)
+  const [importMsg, setImportMsg] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const categories = useMemo(
     () => Array.from(new Set(products.map((p) => p.category))).sort(),
@@ -48,6 +69,55 @@ export default function Products() {
     setPage(1)
   }
 
+  function handleExport() {
+    const header = 'sku,name,price,price_external\n'
+    const body = products
+      .map((p) => {
+        const priceNum = p.price.replace(/[^\d.]/g, '')
+        const priceExtNum = p.priceExternal.replace(/[^\d.]/g, '')
+        return `${p.sku},"${p.name.replace(/"/g, '""')}",${priceNum},${priceExtNum}`
+      })
+      .join('\n')
+    const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `provisio-prices-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleImportFile(file: File) {
+    setImporting(true)
+    setImportMsg(null)
+    try {
+      const text = await file.text()
+      const rows = parsePriceCsv(text)
+      const bySku = new Map(products.map((p) => [p.sku, p]))
+      let updated = 0
+      let skipped = 0
+      for (const row of rows) {
+        const product = bySku.get(row.sku)
+        if (!product) {
+          skipped++
+          continue
+        }
+        await updateProduct(product.id, {
+          price: String(row.price),
+          priceExternal: row.priceExternal != null ? String(row.priceExternal) : '',
+        })
+        updated++
+      }
+      setImportMsg(skipped > 0 ? `Обновлено: ${updated}. Не найдено по SKU: ${skipped}.` : `Обновлено цен: ${updated}.`)
+    } catch (err) {
+      setImportMsg(`Не удалось прочитать файл: ${(err as Error).message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <>
       <div className="header">
@@ -56,7 +126,21 @@ export default function Products() {
           <p>{t('products.subtitle', { count: products.length, categories: categories.length })}</p>
         </div>
         <div className="header-actions">
-          <Button variant="ghost" icon={<Download />}>
+          <Button variant="ghost" icon={<Upload />} onClick={() => fileInputRef.current?.click()} disabled={importing}>
+            {importing ? 'Загружаем…' : 'Импорт цен'}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) handleImportFile(file)
+              e.target.value = ''
+            }}
+          />
+          <Button variant="ghost" icon={<Download />} onClick={handleExport}>
             {t('common.export')}
           </Button>
           <Link to="/products/new" className="btn btn-primary">
@@ -65,6 +149,20 @@ export default function Products() {
           </Link>
         </div>
       </div>
+      {importMsg && (
+        <div
+          style={{
+            background: 'rgba(30,92,62,0.08)',
+            color: 'var(--gesso-accent, #1E5C3E)',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '10px 16px',
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          {importMsg}
+        </div>
+      )}
 
       <Card style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="toolbar" style={{ background: 'transparent', padding: 0 }}>

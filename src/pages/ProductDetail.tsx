@@ -5,6 +5,7 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
+import { PRODUCT_UNITS } from '../lib/data'
 import type { ProductRow, StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -35,13 +36,13 @@ export default function ProductDetail() {
 function ProductDetailForm({ product }: { product: ProductRow }) {
   const navigate = useNavigate()
   const { updateProduct, removeProduct } = useData()
-  const { t, category } = useLanguage()
+  const { t, category, unit } = useLanguage()
 
   const [name, setName] = useState(product.name)
   const [productCategory, setProductCategory] = useState(product.category)
   const [price, setPrice] = useState(product.price.replace(/[^\d.]/g, ''))
   const [priceExternal, setPriceExternal] = useState(product.priceExternal.replace(/[^\d.]/g, ''))
-  const [productUnit, setProductUnit] = useState(product.unit)
+  const [selectedUnits, setSelectedUnits] = useState<string[]>(product.units.length > 0 ? product.units : [product.unit])
   const [stock, setStock] = useState<StockStatus>(product.stock)
   const [active, setActive] = useState(product.active)
   const [saved, setSaved] = useState(false)
@@ -54,7 +55,8 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
       category: productCategory,
       price: String(Number(price || 0)),
       priceExternal,
-      unit: productUnit,
+      unit: selectedUnits[0] ?? product.unit,
+      units: selectedUnits,
       stock,
       active,
       updated: 'Just now',
@@ -159,17 +161,41 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               </div>
             </div>
 
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="pd-price">{t('common.price')}</label>
-                <div className="price-input suffixed">
-                  <input id="pd-price" type="text" value={price} onChange={(e) => setPrice(e.target.value)} />
-                  <span className="suffix">сум</span>
-                </div>
+            <div className="field">
+              <label htmlFor="pd-price">{t('common.price')}</label>
+              <div className="price-input suffixed">
+                <input id="pd-price" type="text" value={price} onChange={(e) => setPrice(e.target.value)} />
+                <span className="suffix">сум</span>
               </div>
-              <div className="field">
-                <label htmlFor="pd-unit">{t('common.unit')}</label>
-                <input id="pd-unit" type="text" value={productUnit} onChange={(e) => setProductUnit(e.target.value)} />
+            </div>
+
+            <div className="field">
+              <label>{t('common.unit')} — можно выбрать до 3, покупатель выберет одну при заказе</label>
+              <div className="chip-row" role="listbox" aria-label={t('common.unit')} aria-multiselectable="true">
+                {PRODUCT_UNITS.map((u) => {
+                  const selected = selectedUnits.includes(u)
+                  return (
+                    <button
+                      key={u}
+                      type="button"
+                      className="chip"
+                      role="option"
+                      aria-selected={selected}
+                      onClick={() =>
+                        setSelectedUnits((prev) => {
+                          if (prev.includes(u)) {
+                            const next = prev.filter((x) => x !== u)
+                            return next.length > 0 ? next : prev
+                          }
+                          if (prev.length >= 3) return prev
+                          return [...prev, u]
+                        })
+                      }
+                    >
+                      {unit(u)}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 

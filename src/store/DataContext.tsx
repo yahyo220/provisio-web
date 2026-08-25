@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import {
   assignDriverToDelivery,
   createCourierAccount,
+  deleteOrderRow,
   deleteProductRow,
   fetchAll,
   insertCustomer,
@@ -30,6 +31,7 @@ export interface NewProductInput {
   price: number
   priceExternal?: number | null
   unit: string
+  units?: string[]
   stock: StockStatus
   active: boolean
   imageUrl?: string
@@ -55,6 +57,7 @@ interface DataContextValue {
 
   orders: OrderRow[]
   updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>
+  removeOrder: (id: string) => Promise<void>
 
   customers: CustomerRow[]
   addCustomer: (input: NewCustomerInput) => Promise<void>
@@ -153,6 +156,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               price: formatMoney(input.price),
               priceExternal: '',
               unit: input.unit,
+              units: input.units ?? [],
               stock: input.stock,
               active: input.active,
               updated: 'Just now',
@@ -181,6 +185,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return
         }
         await updateOrderStatusRow(id, status)
+        await refresh()
+      },
+      removeOrder: async (id) => {
+        if (!connected) {
+          setOrders((prev) => prev.filter((o) => o.id !== id))
+          return
+        }
+        await deleteOrderRow(id)
         await refresh()
       },
 

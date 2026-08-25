@@ -39,6 +39,8 @@ export interface ProductRow {
   /** Optional wholesale/external price shown only to 'external' price_tier customers. Empty string = not set. */
   priceExternal: string
   unit: string
+  /** Up to 3 units this product can be ordered in (e.g. кг/пучок/шт). Empty = just `unit`. */
+  units: string[]
   stock: StockStatus
   active: boolean
   updated: string
