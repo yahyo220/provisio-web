@@ -233,6 +233,19 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                     }}
                   >
                     <div style={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>{f.message}</div>
+                    {f.photoUrls.length > 0 && (
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                        {f.photoUrls.map((url) => (
+                          <a key={url} href={url} target="_blank" rel="noreferrer">
+                            <img
+                              src={url}
+                              alt="Фото от клиента"
+                              style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 'var(--gesso-radius-sm)' }}
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     <div style={{ fontSize: 12, color: 'var(--gesso-fg-muted)', marginTop: 6 }}>
                       {new Date(f.createdAt).toLocaleString()}
                     </div>

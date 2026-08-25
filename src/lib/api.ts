@@ -311,6 +311,7 @@ export async function updateOrderItemQty(itemId: string, qty: number) {
 export interface OrderFeedbackRow {
   id: string
   message: string
+  photoUrls: string[]
   createdAt: string
 }
 
@@ -318,11 +319,16 @@ export async function fetchOrderFeedback(orderId: string): Promise<OrderFeedback
   const db = assertClient()
   const { data, error } = await db
     .from('order_feedback')
-    .select('id, message, created_at')
+    .select('id, message, photo_urls, created_at')
     .eq('order_id', orderId)
     .order('created_at', { ascending: false })
   if (error) throw error
-  return (data ?? []).map((row) => ({ id: row.id, message: row.message, createdAt: row.created_at }))
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    message: row.message,
+    photoUrls: Array.isArray(row.photo_urls) ? row.photo_urls : [],
+    createdAt: row.created_at,
+  }))
 }
 
 export interface SupportMessageRow {
