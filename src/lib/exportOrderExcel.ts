@@ -8,13 +8,7 @@
 import ExcelJS from 'exceljs'
 import type { CustomerRow, OrderRow } from './types'
 import type { OrderLineItem } from './data'
-
-const THIN_BORDER: Partial<ExcelJS.Borders> = {
-  top: { style: 'thin' },
-  bottom: { style: 'thin' },
-  left: { style: 'thin' },
-  right: { style: 'thin' },
-}
+import { THIN_BORDER, triggerXlsxDownload } from './xlsxShared'
 
 export async function downloadOrderExcel(
   order: OrderRow,
@@ -92,14 +86,5 @@ export async function downloadOrderExcel(
     ws.getCell(r, 7).border = THIN_BORDER
   })
 
-  const buffer = await wb.xlsx.writeBuffer()
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `Накладная №${order.orderNumber}.xlsx`
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  await triggerXlsxDownload(wb, `Накладная №${order.orderNumber}.xlsx`)
 }

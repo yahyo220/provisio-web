@@ -8,27 +8,10 @@ import Pagination from '../components/ui/Pagination'
 import StockBadge from '../components/ui/StockBadge'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
+import { downloadPriceListExcel, parsePriceFile } from '../lib/exportPriceList'
 import { useData } from '../store/DataContext'
 
 const PAGE_SIZE = 5
-
-/** Parses the small CSV shape the price import expects: header row, then
- * sku,price[,price_external] — good enough for a spreadsheet-exported price
- * list without pulling in a full CSV library for three columns. */
-function parsePriceCsv(text: string): { sku: string; price: number; priceExternal: number | null }[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
-  if (lines.length === 0) return []
-  const rows = lines[0].toLowerCase().includes('sku') ? lines.slice(1) : lines
-  return rows
-    .map((line) => {
-      const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
-      const sku = cols[0] ?? ''
-      const price = Number((cols[1] ?? '').replace(/[^\d.]/g, ''))
-      const priceExternalRaw = (cols[2] ?? '').replace(/[^\d.]/g, '')
-      return { sku, price, priceExternal: priceExternalRaw ? Number(priceExternalRaw) : null }
-    })
-    .filter((r) => r.sku && Number.isFinite(r.price))
-}
 
 export default function Products() {
   const { products, toggleProductActive, removeProduct, updateProduct } = useData()
@@ -69,32 +52,22 @@ export default function Products() {
     setPage(1)
   }
 
-  function handleExport() {
-    const header = 'sku,name,price,price_external\n'
-    const body = products
-      .map((p) => {
-        const priceNum = p.price.replace(/[^\d.]/g, '')
-        const priceExtNum = p.priceExternal.replace(/[^\d.]/g, '')
-        return `${p.sku},"${p.name.replace(/"/g, '""')}",${priceNum},${priceExtNum}`
-      })
-      .join('\n')
-    const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `provisio-prices-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+  const [exporting, setExporting] = useState(false)
+
+  async function handleExport() {
+    setExporting(true)
+    try {
+      await downloadPriceListExcel(products)
+    } finally {
+      setExporting(false)
+    }
   }
 
   async function handleImportFile(file: File) {
     setImporting(true)
     setImportMsg(null)
     try {
-      const text = await file.text()
-      const rows = parsePriceCsv(text)
+      const rows = await parsePriceFile(file)
       const bySku = new Map(products.map((p) => [p.sku, p]))
       let updated = 0
       let skipped = 0
@@ -132,7 +105,7 @@ export default function Products() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv"
+            accept=".xlsx,.csv"
             style={{ display: 'none' }}
             onChange={(e) => {
               const file = e.target.files?.[0]
@@ -140,8 +113,8 @@ export default function Products() {
               e.target.value = ''
             }}
           />
-          <Button variant="ghost" icon={<Download />} onClick={handleExport}>
-            {t('common.export')}
+          <Button variant="ghost" icon={<Download />} onClick={handleExport} disabled={exporting}>
+            {exporting ? 'Готовим файл…' : t('common.export')}
           </Button>
           <Link to="/products/new" className="btn btn-primary">
             <Plus />
