@@ -9,6 +9,7 @@ import { useLanguage } from '../i18n/LanguageContext'
 import { fetchOrderFeedback, fetchOrderItems, updateOrderItemPrice, updateOrderItemQty, type OrderFeedbackRow } from '../lib/api'
 import type { OrderLineItem } from '../lib/data'
 import { orderTimeline, relatedOrders } from '../lib/data'
+import { downloadOrderExcel } from '../lib/exportOrderExcel'
 import { formatMoney } from '../lib/format'
 import { supabase } from '../lib/supabase'
 import type { OrderRow, OrderStatus } from '../lib/types'
@@ -38,13 +39,15 @@ export default function OrderDetail() {
 }
 
 function OrderDetailForm({ order }: { order: OrderRow }) {
-  const { updateOrderStatus } = useData()
+  const { updateOrderStatus, customers } = useData()
   const { t, unit } = useLanguage()
+  const customer = customers.find((c) => c.id === order.customerId)
 
   const [lineItems, setLineItems] = useState<OrderLineItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(Boolean(supabase))
   const [status, setStatus] = useState<OrderStatus>(order.status)
   const [feedback, setFeedback] = useState<OrderFeedbackRow[]>([])
+  const [exportingExcel, setExportingExcel] = useState(false)
   // While a price field is mid-edit, its displayed text is tracked here
   // instead of coming straight from lineItems — otherwise clearing the
   // field to type a new number snaps back to "0" on every keystroke
@@ -118,6 +121,17 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
     updateOrderStatus(order.id, next).catch((err) => console.error(err))
   }
 
+  async function handleExportExcel() {
+    setExportingExcel(true)
+    try {
+      await downloadOrderExcel(order, customer, lineItems)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setExportingExcel(false)
+    }
+  }
+
   return (
     <>
       <div className="header">
@@ -136,8 +150,8 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
         </div>
         <div className="header-actions">
           <Button variant="text">{t('orderDetail.printOrder')}</Button>
-          <Button variant="ghost" icon={<Download />}>
-            {t('orderDetail.downloadPdf')}
+          <Button variant="ghost" icon={<Download />} onClick={handleExportExcel} disabled={exportingExcel || lineItems.length === 0}>
+            {exportingExcel ? 'Готовим файл…' : 'Скачать Excel'}
           </Button>
           <Dropdown
             allLabel={t('orderDetail.changeStatus')}

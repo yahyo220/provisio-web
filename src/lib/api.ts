@@ -287,7 +287,7 @@ export async function fetchOrderItems(orderId: string): Promise<OrderLineItem[]>
   const db = assertClient()
   const { data, error } = await db
     .from('order_items')
-    .select('*')
+    .select('*, products(category)')
     .eq('order_id', orderId)
     .order('id', { ascending: true })
   if (error) throw error
@@ -299,6 +299,7 @@ export async function fetchOrderItems(orderId: string): Promise<OrderLineItem[]>
     unit: row.unit,
     unitPrice: Number(row.unit_price),
     image: row.image_url || placeholderImage,
+    category: (row.products as { category?: string } | null)?.category ?? '',
   }))
 }
 

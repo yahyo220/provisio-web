@@ -76,6 +76,8 @@ export interface OrderLineItem {
   unit: string
   unitPrice: number
   image: string
+  /** The product's category, looked up via product_id — used by the Excel export. Empty if the product was deleted since. */
+  category: string
 }
 
 export const defaultOrderLineItems: OrderLineItem[] = []
