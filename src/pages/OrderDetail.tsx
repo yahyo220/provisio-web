@@ -6,7 +6,7 @@ import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
 import StatusPill from '../components/ui/StatusPill'
 import { useLanguage } from '../i18n/LanguageContext'
-import { fetchOrderFeedback, fetchOrderItems, updateOrderItemQty, type OrderFeedbackRow } from '../lib/api'
+import { fetchOrderFeedback, fetchOrderItems, updateOrderItemPrice, updateOrderItemQty, type OrderFeedbackRow } from '../lib/api'
 import type { OrderLineItem } from '../lib/data'
 import { orderTimeline, relatedOrders } from '../lib/data'
 import { formatMoney } from '../lib/format'
@@ -96,6 +96,12 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
     const safeQty = Math.max(0, qty)
     setLineItems((items) => items.map((i) => (i === item ? { ...i, qty: safeQty } : i)))
     if (item.id) updateOrderItemQty(item.id, safeQty).catch((err) => console.error(err))
+  }
+
+  function setPrice(item: OrderLineItem, unitPrice: number) {
+    const safePrice = Math.max(0, unitPrice)
+    setLineItems((items) => items.map((i) => (i === item ? { ...i, unitPrice: safePrice } : i)))
+    if (item.id) updateOrderItemPrice(item.id, safePrice).catch((err) => console.error(err))
   }
 
   function changeStatus(next: OrderStatus) {
@@ -197,7 +203,17 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                         </div>
                       </td>
                       <td className="num">{unit(line.unit)}</td>
-                      <td className="num">{formatMoney(line.unitPrice)}</td>
+                      <td className="num">
+                        <input
+                          className="price-input"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={line.unitPrice}
+                          onChange={(e) => setPrice(line, Number(e.target.value))}
+                          aria-label={`Price of ${line.name}`}
+                        />
+                      </td>
                       <td className="num">{formatMoney(line.qty * line.unitPrice)}</td>
                     </tr>
                   ))}

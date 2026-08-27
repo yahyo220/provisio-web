@@ -2292,6 +2292,23 @@ tr.row-link:hover {
   box-shadow: 0 0 0 2px var(--gesso-accent);
 }
 
+.price-input {
+  width: 88px;
+  text-align: right;
+  font-family: var(--gesso-font-body);
+  font-size: var(--gesso-text-base);
+  color: var(--gesso-fg);
+  background: var(--gesso-surface-recessed);
+  border: none;
+  border-radius: var(--gesso-radius-sm);
+  padding: 6px 8px;
+}
+
+.price-input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gesso-accent);
+}
+
 .empty-state {
   padding: 48px 20px;
   text-align: center;

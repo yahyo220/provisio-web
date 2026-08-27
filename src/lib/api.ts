@@ -308,6 +308,12 @@ export async function updateOrderItemQty(itemId: string, qty: number) {
   if (error) throw error
 }
 
+export async function updateOrderItemPrice(itemId: string, unitPrice: number) {
+  const db = assertClient()
+  const { error } = await db.from('order_items').update({ unit_price: unitPrice }).eq('id', itemId)
+  if (error) throw error
+}
+
 export interface OrderFeedbackRow {
   id: string
   message: string
