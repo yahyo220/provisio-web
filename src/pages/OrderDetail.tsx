@@ -45,6 +45,11 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
   const [itemsLoading, setItemsLoading] = useState(Boolean(supabase))
   const [status, setStatus] = useState<OrderStatus>(order.status)
   const [feedback, setFeedback] = useState<OrderFeedbackRow[]>([])
+  // While a price field is mid-edit, its displayed text is tracked here
+  // instead of coming straight from lineItems — otherwise clearing the
+  // field to type a new number snaps back to "0" on every keystroke
+  // (Number('') is 0), making it impossible to actually clear and retype.
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!supabase) {
@@ -102,6 +107,10 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
     const safePrice = Math.max(0, unitPrice)
     setLineItems((items) => items.map((i) => (i === item ? { ...i, unitPrice: safePrice } : i)))
     if (item.id) updateOrderItemPrice(item.id, safePrice).catch((err) => console.error(err))
+  }
+
+  function lineKey(item: OrderLineItem) {
+    return item.id ?? item.sku
   }
 
   function changeStatus(next: OrderStatus) {
@@ -206,11 +215,23 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                       <td className="num">
                         <input
                           className="price-input"
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={line.unitPrice}
-                          onChange={(e) => setPrice(line, Number(e.target.value))}
+                          type="text"
+                          inputMode="decimal"
+                          value={priceDrafts[lineKey(line)] ?? String(line.unitPrice)}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            if (raw !== '' && !/^\d*\.?\d*$/.test(raw)) return
+                            setPriceDrafts((d) => ({ ...d, [lineKey(line)]: raw }))
+                            const parsed = Number(raw)
+                            if (raw !== '' && !Number.isNaN(parsed)) setPrice(line, parsed)
+                          }}
+                          onBlur={() =>
+                            setPriceDrafts((d) => {
+                              const rest = { ...d }
+                              delete rest[lineKey(line)]
+                              return rest
+                            })
+                          }
                           aria-label={`Price of ${line.name}`}
                         />
                       </td>
