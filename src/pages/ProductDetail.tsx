@@ -5,12 +5,12 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
-import { PRODUCT_UNITS } from '../lib/data'
+import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from '../lib/data'
 import type { ProductRow, StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
 const STOCK_OPTIONS: StockStatus[] = ['in', 'low', 'out']
-const ALL_CATEGORIES = ['Vegetables', 'Fruits', 'Dairy', 'Meat', 'Bread', 'Oil', 'Nuts', 'Eggs', 'Cleaning', 'Herbs']
+const ALL_CATEGORIES = PRODUCT_CATEGORIES
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>()

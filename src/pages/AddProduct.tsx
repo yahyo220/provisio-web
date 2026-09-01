@@ -5,12 +5,12 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
-import { PRODUCT_UNITS, placeholderImage } from '../lib/data'
+import { PRODUCT_CATEGORIES, PRODUCT_UNITS, placeholderImage } from '../lib/data'
 import type { StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
 const UNITS = PRODUCT_UNITS
-const CATEGORIES = ['Vegetables', 'Fruits', 'Dairy', 'Meat', 'Bread', 'Oil', 'Nuts', 'Eggs', 'Cleaning', 'Herbs']
+const CATEGORIES = PRODUCT_CATEGORIES
 const STOCK_OPTIONS: StockStatus[] = ['in', 'low', 'out']
 
 export default function AddProduct() {

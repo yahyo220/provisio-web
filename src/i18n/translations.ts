@@ -13,6 +13,22 @@ const CATEGORY_RU: Record<string, string> = {
   Cleaning: 'Бытовая химия',
   Beverages: 'Напитки',
   Herbs: 'Зелень',
+  'Sauces & Condiments': 'Соусы и приправы',
+  'Sweets & Snacks': 'Сладости и снеки',
+  Frozen: 'Замороженные продукты',
+  'Canned Goods': 'Консервы',
+  'Kitchen Supplies / Disposables': 'Кухонные принадлежности',
+  Seafood: 'Морепродукты',
+  'Tea & Coffee': 'Чай и кофе',
+  'Bakery / Confectionery': 'Выпечка и кондитерка',
+  'Legumes & Cereals': 'Бобовые и крупы',
+  'Semi-finished Products': 'Полуфабрикаты',
+  'Packaging & Disposables': 'Упаковка и расходники',
+  'Kitchen Equipment': 'Кухонное оборудование',
+  'Pickles & Marinades': 'Соления и маринады',
+  'Honey & Preserves': 'Мёд и варенье',
+  Spices: 'Специи',
+  'Grains & Pasta': 'Крупы и макароны',
 }
 
 const UNIT_RU: Record<string, string> = {

@@ -22,6 +22,42 @@ export const placeholderImage = `data:image/svg+xml;utf8,${encodeURIComponent(PL
  * can be tagged with up to 3 of these (see ProductRow.units). */
 export const PRODUCT_UNITS = ['kg', 'gram', 'box', 'piece', 'bottle', 'bunch', 'package']
 
+/** Category vocabulary offered when adding/editing a product. The keys here
+ * are the actual `products.category` values stored in the database — add
+ * the matching Russian label in i18n/translations.ts's CATEGORY_RU whenever
+ * a category is added here, or it'll just show the raw English key in the
+ * Russian UI. */
+export const PRODUCT_CATEGORIES = [
+  'Vegetables',
+  'Fruits',
+  'Dairy',
+  'Meat',
+  'Seafood',
+  'Eggs',
+  'Bread',
+  'Bakery / Confectionery',
+  'Herbs',
+  'Spices',
+  'Oil',
+  'Nuts',
+  'Legumes & Cereals',
+  'Grains & Pasta',
+  'Sauces & Condiments',
+  'Sweets & Snacks',
+  'Honey & Preserves',
+  'Pickles & Marinades',
+  'Canned Goods',
+  'Frozen',
+  'Semi-finished Products',
+  'Beverages',
+  'Tea & Coffee',
+  'Groceries',
+  'Cleaning',
+  'Kitchen Supplies / Disposables',
+  'Packaging & Disposables',
+  'Kitchen Equipment',
+]
+
 export const kpis = [
   { label: "Today's revenue", value: '0 сум', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'package' as const },
   { label: "Today's orders", value: '0', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'box' as const },
