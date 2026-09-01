@@ -68,7 +68,7 @@ interface DataContextValue {
   driverRows: DriverRow[]
   assignDriver: (deliveryId: string, driver: string) => Promise<void>
   updateDelivery: (id: string, patch: Partial<DeliveryRow>) => Promise<void>
-  addCourier: (input: { name: string; phone: string; email: string; password: string }) => Promise<void>
+  addCourier: (input: { name: string; phone: string; login: string; password: string }) => Promise<void>
 }
 
 const DataContext = createContext<DataContextValue | null>(null)

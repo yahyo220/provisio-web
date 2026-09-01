@@ -10,24 +10,24 @@ export default function Couriers() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
+  const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleCreate() {
-    if (!name.trim() || !email.trim() || password.length < 6) {
-      setError('Укажите имя, email и пароль (минимум 6 символов).')
+    if (!name.trim() || !login.trim() || password.length < 6) {
+      setError('Укажите имя, логин и пароль (минимум 6 символов).')
       return
     }
     setBusy(true)
     setError(null)
     try {
-      await addCourier({ name: name.trim(), phone: phone.trim(), email: email.trim(), password })
+      await addCourier({ name: name.trim(), phone: phone.trim(), login: login.trim(), password })
       setOpen(false)
       setName('')
       setPhone('')
-      setEmail('')
+      setLogin('')
       setPassword('')
     } catch (err) {
       setError((err as Error).message)
@@ -121,8 +121,8 @@ export default function Couriers() {
               <input id="c-phone" type="text" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
             <div className="field">
-              <label htmlFor="c-email">Email для входа</label>
-              <input id="c-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <label htmlFor="c-login">Логин для входа</label>
+              <input id="c-login" type="text" value={login} onChange={(e) => setLogin(e.target.value)} />
             </div>
             <div className="field">
               <label htmlFor="c-pass">Пароль</label>

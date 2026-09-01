@@ -56,13 +56,18 @@ Deno.serve(async (req) => {
 
     const body = await req.json()
     const role = body.role as 'courier' | 'customer'
-    const email = (body.email as string | undefined)?.trim()
+    const login = (body.login as string | undefined)?.trim()
+    // email stays optional now that sign-in goes through `login` +
+    // resolve_login_email() (see migration 0018) — Supabase Auth still
+    // needs *some* email-shaped identifier internally, so one is
+    // synthesized from the login when the admin didn't type a real one.
+    const email = (body.email as string | undefined)?.trim() || (login ? `${login}@${role}.freshline.internal` : undefined)
     const password = body.password as string | undefined
     const name = (body.name as string | undefined)?.trim() ?? ''
     const phone = (body.phone as string | undefined)?.trim() ?? ''
 
     if (!role || !['courier', 'customer'].includes(role)) return json({ error: 'role must be "courier" or "customer"' }, 400)
-    if (!email || !password) return json({ error: 'email and password are required' }, 400)
+    if (!email || !password) return json({ error: 'login (or email) and password are required' }, 400)
     if (password.length < 6) return json({ error: 'password must be at least 6 characters' }, 400)
 
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
@@ -78,7 +83,7 @@ Deno.serve(async (req) => {
     if (role === 'courier') {
       const { data: driver, error: driverErr } = await admin
         .from('drivers')
-        .insert({ name: name || email, phone, auth_user_id: authUserId, active: true })
+        .insert({ name: name || email, phone, login: login || null, auth_user_id: authUserId, active: true })
         .select()
         .single()
       if (driverErr) {
@@ -95,6 +100,7 @@ Deno.serve(async (req) => {
           type: (body.type as string | undefined) ?? 'Retail',
           phone,
           email,
+          login: login || null,
           location: (body.location as string | undefined) ?? '',
           auth_user_id: authUserId,
           approval_status: 'approved',

@@ -227,13 +227,13 @@ export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>)
 
 /** Calls the `create-account` edge function (service-role) to give a courier
  * a real login. Only succeeds if the caller is signed in as an admin. */
-export async function createCourierAccount(input: { name: string; phone: string; email: string; password: string }) {
+export async function createCourierAccount(input: { name: string; phone: string; login: string; password: string }) {
   const db = assertClient()
   const { data: sessionData } = await db.auth.getSession()
   if (!sessionData.session) throw new Error('Not signed in.')
 
   const { data, error } = await db.functions.invoke('create-account', {
-    body: { role: 'courier', name: input.name, phone: input.phone, email: input.email, password: input.password },
+    body: { role: 'courier', name: input.name, phone: input.phone, login: input.login, password: input.password },
   })
   if (error) throw error
   if (data?.error) throw new Error(data.error)
