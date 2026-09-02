@@ -23,13 +23,19 @@
   --gesso-surface-recessed: rgba(255, 255, 255, 0.22);
   --gesso-divider: rgba(28, 28, 24, 0.1);
   --gesso-glass-border: rgba(255, 255, 255, 0.55);
-  /* A few small floating pieces (dropdown menus, a sticky table header) sit
-     directly *over* other moving content — scrolled-past rows, wrapped chip
-     buttons — instead of just over the calm background photo. At the low
-     opacity above, that content shows through and fights with the overlay's
-     own text. These get this much more opaque backing instead, so they
-     read cleanly no matter what's behind them. */
-  --gesso-surface-overlay: rgba(247, 242, 231, 0.94);
+  /* The sticky table header sits directly *over* other moving content —
+     rows scrolling past underneath it — instead of just over the calm
+     background photo. Two things were tried and ruled out first: the usual
+     low opacity let scrolled rows show straight through the header text;
+     backdrop-filter blur (even a very large radius) never actually took
+     effect here, because backdrop-filter over a scrolling ancestor's own
+     content doesn't composite correctly in every browser — a rendering
+     limitation, not a tuning problem, confirmed by testing a plain opaque
+     color in the same spot and watching it render fine. So this is opaque
+     with no blur, and cool-toned (blue-grey, not the warm canvas tint used
+     everywhere else) so it still reads as part of the same photo, rather
+     than a plain white card dropped on top of it. */
+  --gesso-surface-header: rgba(235, 240, 245, 0.93);
 
   /* ---- Ink ---- */
   --gesso-fg: #1c1c18;

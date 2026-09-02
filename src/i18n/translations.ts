@@ -274,6 +274,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'productDetail.productDetails': 'Product details',
     'productDetail.productName': 'Product name',
     'productDetail.stockAvailability': 'Stock availability',
+    'productDetail.changePhoto': 'Change photo',
+    'productDetail.removePhoto': 'Remove photo',
+    'productDetail.uploadingPhoto': 'Uploading…',
+    'productDetail.photoUploadFailed': "Couldn't upload the photo — try again.",
 
     'addProduct.title': 'Add product',
     'addProduct.subtitle': 'Publish a new item to the catalog — photos, price and stock in under a minute.',
@@ -539,6 +543,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'productDetail.productDetails': 'Информация о товаре',
     'productDetail.productName': 'Название товара',
     'productDetail.stockAvailability': 'Наличие на складе',
+    'productDetail.changePhoto': 'Изменить фото',
+    'productDetail.removePhoto': 'Удалить фото',
+    'productDetail.uploadingPhoto': 'Загрузка…',
+    'productDetail.photoUploadFailed': 'Не удалось загрузить фото — попробуйте ещё раз.',
 
     'addProduct.title': 'Добавить товар',
     'addProduct.subtitle': 'Опубликуйте новый товар в каталоге — фото, цена и наличие за минуту.',

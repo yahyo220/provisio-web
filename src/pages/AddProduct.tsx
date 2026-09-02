@@ -1,11 +1,12 @@
-import { Check, ChevronDown, ImagePlus } from 'lucide-react'
+import { Check, ChevronDown, ImagePlus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
-import { PRODUCT_CATEGORIES, PRODUCT_UNITS, placeholderImage, suggestNextSku } from '../lib/data'
+import { uploadProductPhoto } from '../lib/api'
+import { PRODUCT_CATEGORIES, PRODUCT_UNITS, suggestNextSku } from '../lib/data'
 import type { StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -27,6 +28,25 @@ export default function AddProduct() {
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
   const [priceExternal, setPriceExternal] = useState('')
+  const [photo, setPhoto] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function handlePhotoSelect(file: File) {
+    setUploading(true)
+    setPhotoError(null)
+    try {
+      // No product id yet — group the upload under a throwaway random one;
+      // nothing else needs it to match the product's eventual id.
+      const url = await uploadProductPhoto(file, crypto.randomUUID())
+      setPhoto(url)
+    } catch {
+      setPhotoError(t('productDetail.photoUploadFailed'))
+    } finally {
+      setUploading(false)
+    }
+  }
 
   // The SKU field is pre-filled with the next suggested code for whichever
   // category is selected (e.g. "F-0001" for the first fruit), so admins get
@@ -53,7 +73,7 @@ export default function AddProduct() {
       units: selectedUnits,
       stock,
       active,
-      imageUrl: placeholderImage,
+      imageUrl: photo ?? undefined,
     })
     if (andAddAnother) {
       setName('')
@@ -62,6 +82,8 @@ export default function AddProduct() {
       setSku(suggestNextSku(selectedCategory, [...products, { sku }]))
       setPrice('')
       setPriceExternal('')
+      setPhoto(null)
+      setPhotoError(null)
     } else {
       navigate('/products')
     }
@@ -91,13 +113,50 @@ export default function AddProduct() {
         <div className="col">
           <Card>
             <p className="section-label">{t('addProduct.productPhotos')}</p>
-            <div className="upload-zone" tabIndex={0} role="button" aria-label={t('addProduct.dropImages')}>
-              <div className="upload-icon">
-                <ImagePlus />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handlePhotoSelect(file)
+                e.target.value = ''
+              }}
+            />
+            {photo ? (
+              <div className="thumb-strip" style={{ gridTemplateColumns: '1fr', marginTop: 20 }}>
+                <div className="thumb">
+                  <img src={photo} alt="" />
+                  <button
+                    type="button"
+                    className="remove-btn"
+                    aria-label={t('productDetail.removePhoto')}
+                    onClick={() => setPhoto(null)}
+                  >
+                    <X />
+                  </button>
+                </div>
               </div>
-              <div className="up-title">{t('addProduct.dropImages')}</div>
-              <div className="up-sub">{t('addProduct.uploadHint')}</div>
-            </div>
+            ) : (
+              <div
+                className="upload-zone"
+                tabIndex={0}
+                role="button"
+                aria-label={t('addProduct.dropImages')}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
+                }}
+              >
+                <div className="upload-icon">
+                  <ImagePlus />
+                </div>
+                <div className="up-title">{uploading ? t('productDetail.uploadingPhoto') : t('addProduct.dropImages')}</div>
+                <div className="up-sub">{t('addProduct.uploadHint')}</div>
+              </div>
+            )}
+            {photoError && <p style={{ color: 'var(--gesso-danger)', fontSize: 13, marginTop: 8 }}>{photoError}</p>}
           </Card>
 
           <Card>

@@ -1959,11 +1959,10 @@ td.amount {
   position: sticky;
   top: 0;
   z-index: 1;
-  /* Opaque, not the usual translucent glass — this sits directly over rows
-     scrolling past underneath it, and at the normal glass opacity those
-     rows showed through the header text (reported live: "category, price
-     etc are visible through it while scrolling"). */
-  background: var(--gesso-surface-overlay);
+  /* No backdrop-filter here — see --gesso-surface-header's definition for
+     why. Opaque cool-toned color instead, tuned to fully hide scrolled
+     rows without reading as a stray white bar. */
+  background: var(--gesso-surface-header);
 }
 
 .table-scroll table {
@@ -2114,18 +2113,17 @@ td.amount {
   /* Position (fixed, top/left or top/right) is set inline by Dropdown.tsx,
      computed from the trigger button's own position — see that component
      for why: it's portaled to <body> rather than nested under the toolbar/
-     card that opens it, which is also why there's no backdrop-filter here
-     (an ancestor's backdrop-filter combined with a plain nested box made
-     every option past the first render blank in testing — DOM/computed
-     styles were correct, the pixels just didn't composite; portaling
-     avoids the ancestor stacking/overflow entirely, which also made a
-     separate z-index workaround on .card/.toolbar unnecessary). */
+     card that opens it. That also happens to be why it's safe to use the
+     normal glass look (backdrop-filter) here at all — nested one level
+     inside the toolbar/card's own backdrop-filter, this exact box made
+     every option past the first render blank in one browser during
+     testing (DOM/computed styles were correct, the pixels just didn't
+     composite); portaled straight under <body>, with no backdrop-filter
+     ancestor in between, it renders fine. */
   min-width: 190px;
-  /* Opaque overlay, not the usual glass tint — this floats over whatever
-     the page happens to scroll/wrap underneath it (order rows, category
-     chips), and at the normal low glass opacity that content bled through
-     and fought with the menu's own labels. */
-  background: var(--gesso-surface-overlay);
+  background: var(--gesso-surface-elevated);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-md);
   padding: 6px;

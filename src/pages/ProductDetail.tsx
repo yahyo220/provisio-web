@@ -1,11 +1,12 @@
-import { ArrowLeft, Check, ChevronDown, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowLeft, Check, ChevronDown, ImagePlus, Trash2, X } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
-import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from '../lib/data'
+import { PRODUCT_CATEGORIES, PRODUCT_UNITS, placeholderImage } from '../lib/data'
+import { uploadProductPhoto } from '../lib/api'
 import type { ProductRow, StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -46,8 +47,27 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   const [stock, setStock] = useState<StockStatus>(product.stock)
   const [active, setActive] = useState(product.active)
   const [saved, setSaved] = useState(false)
+  // null = no real photo (shows the placeholder) — distinct from `product.image`,
+  // which is never empty (fetchAll already falls back to the placeholder there).
+  const [photo, setPhoto] = useState<string | null>(product.image === placeholderImage ? null : product.image)
+  const [uploading, setUploading] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const categoryOptions = Array.from(new Set([product.category, ...ALL_CATEGORIES]))
+
+  async function handlePhotoSelect(file: File) {
+    setUploading(true)
+    setPhotoError(null)
+    try {
+      const url = await uploadProductPhoto(file, product.id)
+      setPhoto(url)
+    } catch {
+      setPhotoError(t('productDetail.photoUploadFailed'))
+    } finally {
+      setUploading(false)
+    }
+  }
 
   function handleSave() {
     updateProduct(product.id, {
@@ -59,6 +79,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
       units: selectedUnits,
       stock,
       active,
+      image: photo ?? '',
       updated: 'Just now',
     })
     setSaved(true)
@@ -114,11 +135,65 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
         <div className="col">
           <Card>
             <p className="section-label">{t('productDetail.photo')}</p>
-            <div className="thumb-strip" style={{ gridTemplateColumns: '1fr' }}>
-              <div className="thumb">
-                <img src={product.image} alt={product.name} />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handlePhotoSelect(file)
+                e.target.value = ''
+              }}
+            />
+            {photo ? (
+              <div className="thumb-strip" style={{ gridTemplateColumns: '1fr', marginTop: 20 }}>
+                <div className="thumb">
+                  <img src={photo} alt={product.name} />
+                  <button
+                    type="button"
+                    className="remove-btn"
+                    aria-label={t('productDetail.removePhoto')}
+                    onClick={() => setPhoto(null)}
+                  >
+                    <X />
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div
+                className="upload-zone"
+                style={{ marginTop: 20 }}
+                tabIndex={0}
+                role="button"
+                aria-label={t('addProduct.dropImages')}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
+                }}
+              >
+                <div className="upload-icon">
+                  <ImagePlus />
+                </div>
+                <div className="up-title">{uploading ? t('productDetail.uploadingPhoto') : t('addProduct.dropImages')}</div>
+                <div className="up-sub">{t('addProduct.uploadHint')}</div>
+              </div>
+            )}
+            {photo && (
+              <Button
+                variant="ghost"
+                icon={<ImagePlus />}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                block
+                style={{ marginTop: 12 }}
+              >
+                {uploading ? t('productDetail.uploadingPhoto') : t('productDetail.changePhoto')}
+              </Button>
+            )}
+            {photoError && (
+              <p style={{ color: 'var(--gesso-danger)', fontSize: 13, marginTop: 8 }}>{photoError}</p>
+            )}
           </Card>
 
           <Card>

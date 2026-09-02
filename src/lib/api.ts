@@ -184,8 +184,27 @@ export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
   if (patch.units !== undefined) dbPatch.units = patch.units.length > 0 ? patch.units : null
   if (patch.stock !== undefined) dbPatch.stock = patch.stock
   if (patch.active !== undefined) dbPatch.active = patch.active
+  // Empty string (photo removed, falls back to the placeholder at display
+  // time) is stored as null, same as a product that never had a photo.
+  if (patch.image !== undefined) dbPatch.image_url = patch.image || null
   const { error } = await db.from('products').update(dbPatch).eq('id', id)
   if (error) throw error
+}
+
+/** Uploads a product photo to the public `product-photos` bucket and
+ * returns its public URL. `keyPrefix` groups an upload under a folder —
+ * pass the product id when editing an existing product, or a throwaway
+ * random id while adding a new one that doesn't have an id yet. */
+export async function uploadProductPhoto(file: File, keyPrefix: string): Promise<string> {
+  const db = assertClient()
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+  const path = `${keyPrefix}/${Date.now()}.${ext}`
+  const { error } = await db.storage.from('product-photos').upload(path, file, {
+    cacheControl: '3600',
+    upsert: false,
+  })
+  if (error) throw error
+  return db.storage.from('product-photos').getPublicUrl(path).data.publicUrl
 }
 
 export async function deleteProductRow(id: string) {
