@@ -1935,6 +1935,25 @@ td.amount {
   overflow-x: auto;
 }
 
+/* Opt-in for tables with a large page size (e.g. Products at 20 rows/page):
+   keep the card the same footprint it always had at ~5 visible rows, and
+   let the rest scroll *inside* it instead of stretching the page tall and
+   pushing pagination/footer far below the fold. The header stays pinned
+   while scrolling so column labels are never scrolled out of view. */
+.table-scroll.tall {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.table-scroll.tall thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--gesso-surface);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
 .table-scroll table {
   min-width: 920px;
 }

@@ -11,7 +11,7 @@ import { useLanguage } from '../i18n/LanguageContext'
 import { downloadPriceListExcel, parsePriceFile } from '../lib/exportPriceList'
 import { useData } from '../store/DataContext'
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 20
 
 export default function Products() {
   const { products, toggleProductActive, removeProduct, updateProduct } = useData()
@@ -219,7 +219,7 @@ export default function Products() {
       </Card>
 
       <div className="table-card">
-        <div className="table-scroll">
+        <div className="table-scroll tall">
           <table>
             <thead>
               <tr>
