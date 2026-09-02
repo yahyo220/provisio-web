@@ -1,22 +1,29 @@
 /*
-  Design tokens — "Cool Command"
-  Light interface, deep green accents on a pale orange ground.
+  Design tokens — "Cool Command", glass revision
+  Same green-on-warm palette as before, but every surface is now a
+  translucent glass tint instead of a flat color — the whole app sits over
+  a fixed photo background (see base.css) the way the login page always
+  has. Surfaces that actually hold real UI (.card, .modal, .toolbar, etc.)
+  also get backdrop-filter blur in components.css; small inline bits
+  (badges, hover states, thumbnails) just get the tint, without blur, so
+  hovering a table row doesn't ask the browser to blur-filter on every row.
   Ground truth: per-screen reference HTML + design.md token tables.
   Where the two disagreed, the reference HTML's embedded :root won
   (e.g. radii 6/10/16px, shadows all "none").
 */
 
 :root {
-  /* ---- Surfaces ---- */
-  --gesso-canvas: #f7f2e7;
-  --gesso-surface: #ffffff;
-  --gesso-surface-elevated: #fbf7ef;
-  --gesso-surface-recessed: #f0e5df;
-  --gesso-divider: rgba(28, 28, 24, 0.05);
+  /* ---- Surfaces (translucent — see comment above) ---- */
+  --gesso-canvas: rgba(247, 242, 231, 0.82);
+  --gesso-surface: rgba(255, 255, 255, 0.6);
+  --gesso-surface-elevated: rgba(255, 255, 255, 0.72);
+  --gesso-surface-recessed: rgba(255, 255, 255, 0.38);
+  --gesso-divider: rgba(28, 28, 24, 0.08);
+  --gesso-glass-border: rgba(255, 255, 255, 0.5);
 
   /* ---- Ink ---- */
   --gesso-fg: #1c1c18;
-  --gesso-fg-muted: #8a8678;
+  --gesso-fg-muted: #55523f;
 
   /* ---- Brand ---- */
   --gesso-accent: #1e5c3e; /* primary */

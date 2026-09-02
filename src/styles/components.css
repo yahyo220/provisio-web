@@ -27,6 +27,7 @@
   background: color-mix(in srgb, var(--gesso-canvas) 88%, transparent);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--gesso-glass-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -325,7 +326,11 @@
 
 .card {
   background: var(--gesso-surface);
+  border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-lg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 16px 40px -20px rgba(28, 28, 24, 0.25);
   padding: 24px;
 }
 
@@ -1190,7 +1195,10 @@ td.amount {
 
 .toolbar {
   background: var(--gesso-surface);
+  border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-lg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   padding: 16px 20px;
   display: flex;
   align-items: center;
@@ -1901,7 +1909,10 @@ td.amount {
 
 .table-card {
   background: var(--gesso-surface);
+  border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-lg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   overflow: hidden;
 }
 
@@ -2058,8 +2069,11 @@ td.amount {
   top: calc(100% + 8px);
   left: 0;
   min-width: 190px;
-  background: var(--gesso-surface);
+  background: var(--gesso-surface-elevated);
+  border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-md);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   padding: 6px;
   z-index: 60;
   box-shadow: 0 12px 32px rgba(28, 28, 24, 0.14);
@@ -2109,8 +2123,11 @@ td.amount {
 }
 
 .modal {
-  background: var(--gesso-surface);
+  background: var(--gesso-surface-elevated);
+  border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-lg);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
   padding: 24px;
   width: 100%;
   max-width: 480px;
@@ -2156,8 +2173,11 @@ td.amount {
   top: calc(100% + 12px);
   right: 0;
   width: 268px;
-  background: var(--gesso-surface);
+  background: var(--gesso-surface-elevated);
+  border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-lg);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   padding: 8px;
   z-index: 150;
   box-shadow: 0 16px 40px rgba(28, 28, 24, 0.16);

@@ -21,8 +21,28 @@ body {
 body {
   font-family: var(--gesso-font-body);
   color: var(--gesso-fg);
-  background: var(--gesso-canvas);
   line-height: 1.4;
+  /* Same fixed photo the login page uses — everything inside the app is a
+     glass panel floating over it now (see tokens.css's translucent
+     surfaces + the backdrop-filter rules in components.css). Fixed so it
+     stays put while any page's content scrolls past. */
+  background: url('/login-bg.jpg') no-repeat center center fixed;
+  background-size: cover;
+}
+
+/* A soft, blurred wash over the photo *before* any content — without this,
+   text that sits directly on `.page`/`.wrap` (page titles, toolbar labels,
+   anything not inside a .card) would be reading straight off the busy
+   photo with zero contrast margin. Cards/modals/etc. layer their own
+   stronger frost on top of this base wash. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--gesso-canvas);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 0;
 }
 
 img,
@@ -62,5 +82,7 @@ blockquote {
 }
 
 #root {
+  position: relative;
+  z-index: 1;
   min-height: 100vh;
 }
