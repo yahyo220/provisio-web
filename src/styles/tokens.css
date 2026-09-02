@@ -23,19 +23,20 @@
   --gesso-surface-recessed: rgba(255, 255, 255, 0.22);
   --gesso-divider: rgba(28, 28, 24, 0.1);
   --gesso-glass-border: rgba(255, 255, 255, 0.55);
-  /* For the handful of small pieces where getting covered by something
-     unreadable isn't an option — the sticky table header, dropdown menus —
-     rather than the usual translucent-plus-blur recipe. backdrop-filter
-     turned out to be unreliable for these in practice: it never took
-     effect on the sticky header at all (confirmed live — a plain opaque
-     color in the same spot rendered correctly where blur did not), and
-     separately, a real user's Chrome showed dropdown menus with the photo
-     showing straight through, un-blurred, despite hardware-accelerated
-     compositing being on — so this doesn't even reduce to one fixable
-     cause. Both read fine without blur once solid enough, so: opaque, no
-     blur, and cool-toned (blue-grey, not the warm canvas tint used
-     everywhere else) so it still reads as part of the same photo rather
-     than a plain white card dropped on top of it. */
+  /* Dropdown menus float over whatever the page happens to have underneath
+     them (order rows, category chips) and can't risk being unreadable, so
+     they use this instead of the usual translucent-plus-blur recipe.
+     backdrop-filter turned out unreliable here in practice — a real user's
+     Chrome rendered the menu with the photo showing straight through it,
+     completely un-blurred, despite the browser otherwise reporting
+     hardware-accelerated compositing. Opaque, no blur, and cool-toned
+     (blue-grey, not the warm canvas tint used everywhere else) so it still
+     reads as part of the same photo rather than a plain white card dropped
+     on top of it. (Products' table header hit a related-looking bleed-
+     through problem, but for a different reason — a sticky header sitting
+     directly over its own scrolling rows — solved instead by giving the
+     header its own non-scrolling table, so rows never reach behind it at
+     all; see Products.tsx.) */
   --gesso-surface-opaque: rgba(235, 240, 245, 0.93);
 
   /* ---- Ink ---- */

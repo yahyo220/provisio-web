@@ -13,6 +13,20 @@ import { useData } from '../store/DataContext'
 
 const PAGE_SIZE = 20
 
+// Column widths shared between the header table and the body table below —
+// see the comment by their markup for why there are two separate tables.
+const COLUMN_WIDTHS = ['26%', '11%', '7%', '6%', '12%', '9%', '15%', '14%']
+
+function ProductColgroup() {
+  return (
+    <colgroup>
+      {COLUMN_WIDTHS.map((w, i) => (
+        <col key={i} style={{ width: w }} />
+      ))}
+    </colgroup>
+  )
+}
+
 export default function Products() {
   const { products, toggleProductActive, removeProduct, updateProduct } = useData()
   const { t, category, unit } = useLanguage()
@@ -219,21 +233,38 @@ export default function Products() {
       </Card>
 
       <div className="table-card">
-        <div className="table-scroll tall">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('common.product')}</th>
-                <th>{t('common.category')}</th>
-                <th>{t('common.price')}</th>
-                <th>{t('common.unit')}</th>
-                <th>{t('common.stock')}</th>
-                <th>{t('products.tableActive')}</th>
-                <th>{t('products.lastUpdated')}</th>
-                <th style={{ textAlign: 'right' }}>{t('common.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
+        {/* Split into two tables (matching column widths via ProductColgroup)
+            instead of one table with a sticky <thead>: the header needs to
+            stay visible while scrolling through up to 20 rows, but a sticky
+            header sitting *over* scrolling rows is what caused rows to show
+            through it (tried opaque backgrounds, blur, a fade — all either
+            looked wrong or didn't render reliably everywhere). With the
+            header in its own non-scrolling table above a separately
+            scrolling body, rows simply can't reach behind it — there's
+            nothing to hide, so the header can stay the same plain
+            translucent style as every other table on the site. */}
+        <div className="split-table">
+          <div className="table-scroll">
+            <table>
+              <ProductColgroup />
+              <thead>
+                <tr>
+                  <th>{t('common.product')}</th>
+                  <th>{t('common.category')}</th>
+                  <th>{t('common.price')}</th>
+                  <th>{t('common.unit')}</th>
+                  <th>{t('common.stock')}</th>
+                  <th>{t('products.tableActive')}</th>
+                  <th>{t('products.lastUpdated')}</th>
+                  <th style={{ textAlign: 'right' }}>{t('common.actions')}</th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+          <div className="table-scroll tall">
+            <table>
+              <ProductColgroup />
+              <tbody>
               {pageItems.length === 0 && (
                 <tr>
                   <td colSpan={8}>
@@ -297,8 +328,9 @@ export default function Products() {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
         <Pagination
           page={safePage}

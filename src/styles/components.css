@@ -1955,18 +1955,16 @@ td.amount {
   overflow-y: auto;
 }
 
-.table-scroll.tall thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  /* No backdrop-filter here — see --gesso-surface-opaque's definition for
-     why. Opaque cool-toned color instead, tuned to fully hide scrolled
-     rows without reading as a stray white bar. */
-  background: var(--gesso-surface-opaque);
-}
-
 .table-scroll table {
   min-width: 920px;
+}
+
+/* Products' header table and scrolling body table (see Products.tsx) need
+   matching column widths despite being two separate tables — fixed layout
+   makes each table actually honor its <colgroup>'s widths instead of
+   sizing columns from their own content. */
+.split-table table {
+  table-layout: fixed;
 }
 
 .table-scroll thead th {
