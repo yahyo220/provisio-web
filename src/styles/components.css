@@ -1206,6 +1206,21 @@ td.amount {
   flex-wrap: wrap;
 }
 
+/* When a toolbar sits inside a .card that already provides the glass panel
+   (Products, Customers, Deliveries), it should contribute no surface of its
+   own — just the flex row. Previously this was done with an inline
+   `style={{ background: 'transparent', padding: 0 }}` override, which left
+   the border/backdrop-filter above in place: a borderless-background,
+   bordered-outline rectangle around the search field + filter pills, drawn
+   over the photo, which read as a stray white line running between them. */
+.toolbar.bare {
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+}
+
 .search-field {
   position: relative;
   flex: 1;
@@ -2312,7 +2327,7 @@ tr.row-link:hover {
   box-shadow: 0 0 0 2px var(--gesso-accent);
 }
 
-.price-input {
+.price-cell-input {
   width: 88px;
   text-align: right;
   font-family: var(--gesso-font-body);
@@ -2324,7 +2339,7 @@ tr.row-link:hover {
   padding: 6px 8px;
 }
 
-.price-input:focus-visible {
+.price-cell-input:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--gesso-accent);
 }

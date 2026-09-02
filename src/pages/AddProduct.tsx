@@ -1,11 +1,11 @@
 import { Check, ChevronDown, ImagePlus } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
-import { PRODUCT_CATEGORIES, PRODUCT_UNITS, placeholderImage } from '../lib/data'
+import { PRODUCT_CATEGORIES, PRODUCT_UNITS, placeholderImage, suggestNextSku } from '../lib/data'
 import type { StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -14,7 +14,7 @@ const CATEGORIES = PRODUCT_CATEGORIES
 const STOCK_OPTIONS: StockStatus[] = ['in', 'low', 'out']
 
 export default function AddProduct() {
-  const { addProduct } = useData()
+  const { products, addProduct } = useData()
   const { t, category, unit } = useLanguage()
   const navigate = useNavigate()
 
@@ -27,6 +27,19 @@ export default function AddProduct() {
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
   const [priceExternal, setPriceExternal] = useState('')
+
+  // The SKU field is pre-filled with the next suggested code for whichever
+  // category is selected (e.g. "F-0001" for the first fruit), so admins get
+  // a consistent, sortable SKU by default without typing one — but they can
+  // still overwrite it by hand. `skuTouched` tracks whether the current text
+  // is still "ours": once the admin edits it directly, switching category no
+  // longer overwrites their choice.
+  const skuTouched = useRef(false)
+
+  useEffect(() => {
+    if (skuTouched.current) return
+    setSku(suggestNextSku(selectedCategory, products))
+  }, [selectedCategory, products])
 
   async function handleSave(andAddAnother: boolean) {
     if (!name.trim() || !sku.trim()) return
@@ -45,7 +58,8 @@ export default function AddProduct() {
     if (andAddAnother) {
       setName('')
       setDescription('')
-      setSku('')
+      skuTouched.current = false
+      setSku(suggestNextSku(selectedCategory, [...products, { sku }]))
       setPrice('')
       setPriceExternal('')
     } else {
@@ -141,9 +155,12 @@ export default function AddProduct() {
                 <input
                   id="p-sku"
                   type="text"
-                  placeholder="e.g. VEG-0142"
+                  placeholder="e.g. F-0001"
                   value={sku}
-                  onChange={(e) => setSku(e.target.value)}
+                  onChange={(e) => {
+                    skuTouched.current = true
+                    setSku(e.target.value)
+                  }}
                 />
               </div>
             </div>

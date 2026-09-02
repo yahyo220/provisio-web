@@ -81,7 +81,7 @@ export default function Customers() {
       </section>
 
       <Card style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div className="toolbar" style={{ background: 'transparent', padding: 0 }}>
+        <div className="toolbar bare">
           <div className="search-field on-canvas">
             <Search />
             <input

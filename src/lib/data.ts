@@ -58,6 +58,69 @@ export const PRODUCT_CATEGORIES = [
   'Kitchen Equipment',
 ]
 
+/** SKU letter prefix per category, always Latin letters regardless of UI
+ * language (per client request: SKUs should be sortable/distinguishable at a
+ * glance, e.g. "F-0001" for the 1st fruit ever added). One letter where a
+ * category's initial doesn't collide with any other category's initial;
+ * two letters (a memorable pair, not just "first two letters") where it does
+ * collide or the name has more than two words. Keep this in sync with
+ * PRODUCT_CATEGORIES — every entry needs a unique code here. */
+export const CATEGORY_SKU_PREFIX: Record<string, string> = {
+  Vegetables: 'V',
+  Fruits: 'F',
+  Dairy: 'D',
+  Meat: 'M',
+  Seafood: 'SE',
+  Eggs: 'E',
+  Bread: 'BR',
+  'Bakery / Confectionery': 'BC',
+  Herbs: 'HB',
+  Spices: 'SP',
+  Oil: 'O',
+  Nuts: 'N',
+  'Legumes & Cereals': 'LC',
+  'Grains & Pasta': 'GP',
+  'Sauces & Condiments': 'SC',
+  'Sweets & Snacks': 'SW',
+  'Honey & Preserves': 'HP',
+  'Pickles & Marinades': 'PM',
+  'Canned Goods': 'CG',
+  Frozen: 'FZ',
+  'Semi-finished Products': 'SF',
+  Beverages: 'BV',
+  'Tea & Coffee': 'TC',
+  Groceries: 'GR',
+  Cleaning: 'CL',
+  'Kitchen Supplies / Disposables': 'KS',
+  'Packaging & Disposables': 'PD',
+  'Kitchen Equipment': 'KE',
+}
+
+/** Fallback for a category that somehow isn't in the map above (shouldn't
+ * happen since every PRODUCT_CATEGORIES entry has one) — first letter of
+ * the category name, uppercased. */
+function fallbackSkuPrefix(category: string): string {
+  return (category.trim()[0] || 'X').toUpperCase()
+}
+
+/** Suggests the next SKU for a new product in `category`, given the products
+ * that already exist. Looks at existing SKUs under this category's prefix
+ * and continues the sequence from the highest number found — rather than
+ * just counting current products — so deleting a product never causes the
+ * next suggestion to reuse a SKU that's already been used (and possibly
+ * printed on a label, referenced in an old order, etc). */
+export function suggestNextSku(category: string, existingProducts: { sku: string }[]): string {
+  const prefix = CATEGORY_SKU_PREFIX[category] ?? fallbackSkuPrefix(category)
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`, 'i')
+  let maxN = 0
+  for (const p of existingProducts) {
+    const match = pattern.exec(p.sku.trim())
+    if (match) maxN = Math.max(maxN, Number(match[1]))
+  }
+  const next = String(maxN + 1).padStart(4, '0')
+  return `${prefix}-${next}`
+}
+
 export const kpis = [
   { label: "Today's revenue", value: '0 сум', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'package' as const },
   { label: "Today's orders", value: '0', delta: '0%', ref: 'vs yesterday', direction: 'up' as const, icon: 'box' as const },

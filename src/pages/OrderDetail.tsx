@@ -228,7 +228,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                       <td className="num">{unit(line.unit)}</td>
                       <td className="num">
                         <input
-                          className="price-input"
+                          className="price-cell-input"
                           type="text"
                           inputMode="decimal"
                           value={priceDrafts[lineKey(line)] ?? String(line.unitPrice)}
