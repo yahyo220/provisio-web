@@ -23,19 +23,20 @@
   --gesso-surface-recessed: rgba(255, 255, 255, 0.22);
   --gesso-divider: rgba(28, 28, 24, 0.1);
   --gesso-glass-border: rgba(255, 255, 255, 0.55);
-  /* The sticky table header sits directly *over* other moving content —
-     rows scrolling past underneath it — instead of just over the calm
-     background photo. Two things were tried and ruled out first: the usual
-     low opacity let scrolled rows show straight through the header text;
-     backdrop-filter blur (even a very large radius) never actually took
-     effect here, because backdrop-filter over a scrolling ancestor's own
-     content doesn't composite correctly in every browser — a rendering
-     limitation, not a tuning problem, confirmed by testing a plain opaque
-     color in the same spot and watching it render fine. So this is opaque
-     with no blur, and cool-toned (blue-grey, not the warm canvas tint used
-     everywhere else) so it still reads as part of the same photo, rather
+  /* For the handful of small pieces where getting covered by something
+     unreadable isn't an option — the sticky table header, dropdown menus —
+     rather than the usual translucent-plus-blur recipe. backdrop-filter
+     turned out to be unreliable for these in practice: it never took
+     effect on the sticky header at all (confirmed live — a plain opaque
+     color in the same spot rendered correctly where blur did not), and
+     separately, a real user's Chrome showed dropdown menus with the photo
+     showing straight through, un-blurred, despite hardware-accelerated
+     compositing being on — so this doesn't even reduce to one fixable
+     cause. Both read fine without blur once solid enough, so: opaque, no
+     blur, and cool-toned (blue-grey, not the warm canvas tint used
+     everywhere else) so it still reads as part of the same photo rather
      than a plain white card dropped on top of it. */
-  --gesso-surface-header: rgba(235, 240, 245, 0.93);
+  --gesso-surface-opaque: rgba(235, 240, 245, 0.93);
 
   /* ---- Ink ---- */
   --gesso-fg: #1c1c18;

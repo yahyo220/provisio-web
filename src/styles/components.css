@@ -1959,10 +1959,10 @@ td.amount {
   position: sticky;
   top: 0;
   z-index: 1;
-  /* No backdrop-filter here — see --gesso-surface-header's definition for
+  /* No backdrop-filter here — see --gesso-surface-opaque's definition for
      why. Opaque cool-toned color instead, tuned to fully hide scrolled
      rows without reading as a stray white bar. */
-  background: var(--gesso-surface-header);
+  background: var(--gesso-surface-opaque);
 }
 
 .table-scroll table {
@@ -2113,17 +2113,15 @@ td.amount {
   /* Position (fixed, top/left or top/right) is set inline by Dropdown.tsx,
      computed from the trigger button's own position — see that component
      for why: it's portaled to <body> rather than nested under the toolbar/
-     card that opens it. That also happens to be why it's safe to use the
-     normal glass look (backdrop-filter) here at all — nested one level
-     inside the toolbar/card's own backdrop-filter, this exact box made
-     every option past the first render blank in one browser during
-     testing (DOM/computed styles were correct, the pixels just didn't
-     composite); portaled straight under <body>, with no backdrop-filter
-     ancestor in between, it renders fine. */
+     card that opens it (that fixed a separate compositing bug where nesting
+     under the toolbar's own backdrop-filter blanked every option past the
+     first). No backdrop-filter on the menu itself either, on purpose — see
+     --gesso-surface-opaque: a real user's Chrome rendered this menu with
+     the photo showing straight through un-blurred despite the browser
+     otherwise reporting hardware-accelerated compositing, so a menu
+     someone actually has to read can't depend on blur working. */
   min-width: 190px;
-  background: var(--gesso-surface-elevated);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  background: var(--gesso-surface-opaque);
   border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-md);
   padding: 6px;
