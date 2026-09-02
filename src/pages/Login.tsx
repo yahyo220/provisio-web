@@ -1,4 +1,4 @@
-import { Leaf } from 'lucide-react'
+import { Leaf, Lock, Mail } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import Button from '../components/ui/Button'
 import { useAuth } from '../store/AuthContext'
@@ -20,76 +20,61 @@ export default function Login({ deniedMessage }: { deniedMessage?: string }) {
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--gesso-bg)',
-        padding: 24,
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 380,
-          background: 'var(--gesso-surface)',
-          border: '1px solid var(--gesso-divider)',
-          borderRadius: 'var(--gesso-radius-lg)',
-          padding: 32,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
+    <div className="login-scene">
+      <div className="login-scene-glow login-scene-glow-a" />
+      <div className="login-scene-glow login-scene-glow-b" />
+      <div className="login-scene-glow login-scene-glow-c" />
+
+      <div className="login-card">
+        <div className="login-brand">
           <div className="brand-mark">
             <Leaf />
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 18 }}>Provisio</div>
-            <div style={{ fontSize: 13, color: 'var(--gesso-fg-muted)' }}>Admin</div>
+            <div className="login-brand-name">Freshline</div>
+            <div className="login-brand-sub">Панель управления</div>
           </div>
         </div>
 
-        {deniedMessage && (
-          <div
-            style={{
-              background: 'rgba(200,40,40,0.08)',
-              color: '#c02828',
-              borderRadius: 'var(--gesso-radius-md)',
-              padding: '10px 14px',
-              fontSize: 13,
-              marginBottom: 16,
-            }}
-          >
+        {deniedMessage ? (
+          <div className="login-denied">
             {deniedMessage}
-            <button
-              type="button"
-              onClick={() => signOut()}
-              style={{ display: 'block', marginTop: 8, background: 'none', border: 'none', color: 'inherit', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
-            >
+            <button type="button" className="login-denied-link" onClick={() => signOut()}>
               Выйти и войти под другим аккаунтом
             </button>
           </div>
-        )}
+        ) : (
+          <form onSubmit={handleSubmit} className="login-form">
+            <label className="login-input-box" htmlFor="login-email">
+              <Mail className="login-input-icon" />
+              <input
+                id="login-email"
+                type="email"
+                required
+                autoComplete="username"
+                placeholder=" "
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <span>Email</span>
+            </label>
 
-        {!deniedMessage && (
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div className="field">
-              <label htmlFor="login-email">Email</label>
-              <input id="login-email" type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="login-password">Пароль</label>
+            <label className="login-input-box" htmlFor="login-password">
+              <Lock className="login-input-icon" />
               <input
                 id="login-password"
                 type="password"
                 required
                 autoComplete="current-password"
+                placeholder=" "
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-            </div>
-            {error && <div style={{ color: '#c02828', fontSize: 13 }}>{error}</div>}
+              <span>Пароль</span>
+            </label>
+
+            {error && <div className="login-error">{error}</div>}
+
             <Button type="submit" variant="primary" block disabled={busy}>
               {busy ? 'Входим…' : 'Войти'}
             </Button>
