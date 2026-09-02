@@ -23,6 +23,13 @@
   --gesso-surface-recessed: rgba(255, 255, 255, 0.22);
   --gesso-divider: rgba(28, 28, 24, 0.1);
   --gesso-glass-border: rgba(255, 255, 255, 0.55);
+  /* A few small floating pieces (dropdown menus, a sticky table header) sit
+     directly *over* other moving content — scrolled-past rows, wrapped chip
+     buttons — instead of just over the calm background photo. At the low
+     opacity above, that content shows through and fights with the overlay's
+     own text. These get this much more opaque backing instead, so they
+     read cleanly no matter what's behind them. */
+  --gesso-surface-overlay: rgba(247, 242, 231, 0.94);
 
   /* ---- Ink ---- */
   --gesso-fg: #1c1c18;

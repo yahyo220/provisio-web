@@ -1933,6 +1933,16 @@ td.amount {
 
 .table-scroll {
   overflow-x: auto;
+  /* The horizontal scrollbar only ever matters on a narrow viewport where
+     the table (min-width below) genuinely doesn't fit — at normal widths
+     there's nothing to scroll, so the track/thumb chrome was just visual
+     noise. Hidden here; overflow still scrolls fine by wheel/trackpad. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.table-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 /* Opt-in for tables with a large page size (e.g. Products at 20 rows/page):
@@ -1949,9 +1959,11 @@ td.amount {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--gesso-surface);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  /* Opaque, not the usual translucent glass — this sits directly over rows
+     scrolling past underneath it, and at the normal glass opacity those
+     rows showed through the header text (reported live: "category, price
+     etc are visible through it while scrolling"). */
+  background: var(--gesso-surface-overlay);
 }
 
 .table-scroll table {
@@ -2099,15 +2111,23 @@ td.amount {
 }
 
 .dropdown-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
+  /* Position (fixed, top/left or top/right) is set inline by Dropdown.tsx,
+     computed from the trigger button's own position — see that component
+     for why: it's portaled to <body> rather than nested under the toolbar/
+     card that opens it, which is also why there's no backdrop-filter here
+     (an ancestor's backdrop-filter combined with a plain nested box made
+     every option past the first render blank in testing — DOM/computed
+     styles were correct, the pixels just didn't composite; portaling
+     avoids the ancestor stacking/overflow entirely, which also made a
+     separate z-index workaround on .card/.toolbar unnecessary). */
   min-width: 190px;
-  background: var(--gesso-surface-elevated);
+  /* Opaque overlay, not the usual glass tint — this floats over whatever
+     the page happens to scroll/wrap underneath it (order rows, category
+     chips), and at the normal low glass opacity that content bled through
+     and fought with the menu's own labels. */
+  background: var(--gesso-surface-overlay);
   border: 1px solid var(--gesso-glass-border);
   border-radius: var(--gesso-radius-md);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
   padding: 6px;
   z-index: 60;
   box-shadow: 0 12px 32px rgba(28, 28, 24, 0.14);
@@ -2116,11 +2136,6 @@ td.amount {
   gap: 2px;
   max-height: 280px;
   overflow-y: auto;
-}
-
-.dropdown-menu.align-right {
-  left: auto;
-  right: 0;
 }
 
 .dropdown-item {
