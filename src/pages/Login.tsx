@@ -1,7 +1,7 @@
 import { Leaf, Lock, Mail } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import Button from '../components/ui/Button'
 import { useAuth } from '../store/AuthContext'
+import '../styles/login.css'
 
 export default function Login({ deniedMessage }: { deniedMessage?: string }) {
   const { signIn, signOut } = useAuth()
@@ -20,66 +20,61 @@ export default function Login({ deniedMessage }: { deniedMessage?: string }) {
   }
 
   return (
-    <div className="login-scene">
-      <div className="login-scene-glow login-scene-glow-a" />
-      <div className="login-scene-glow login-scene-glow-b" />
-      <div className="login-scene-glow login-scene-glow-c" />
-
-      <div className="login-card">
-        <div className="login-brand">
-          <div className="brand-mark">
+    <div className="login-page">
+      <div className="login-wrapper">
+        <div className="login-form-box">
+          <div className="login-brand-row">
             <Leaf />
           </div>
-          <div>
-            <div className="login-brand-name">Freshline</div>
-            <div className="login-brand-sub">Панель управления</div>
-          </div>
+          <h2>Freshline</h2>
+
+          {deniedMessage ? (
+            <div className="login-denied">
+              {deniedMessage}
+              <button type="button" className="login-denied-link" onClick={() => signOut()}>
+                Выйти и войти под другим аккаунтом
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              <div className="login-input-box">
+                <input
+                  id="login-email"
+                  type="email"
+                  required
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <label htmlFor="login-email">Email</label>
+                <span className="login-icon">
+                  <Mail size={18} />
+                </span>
+              </div>
+
+              <div className="login-input-box">
+                <input
+                  id="login-password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <label htmlFor="login-password">Пароль</label>
+                <span className="login-icon">
+                  <Lock size={18} />
+                </span>
+              </div>
+
+              {error && <div className="login-error">{error}</div>}
+
+              <button type="submit" className="login-btn" disabled={busy}>
+                {busy ? 'Входим…' : 'Войти'}
+              </button>
+            </form>
+          )}
         </div>
-
-        {deniedMessage ? (
-          <div className="login-denied">
-            {deniedMessage}
-            <button type="button" className="login-denied-link" onClick={() => signOut()}>
-              Выйти и войти под другим аккаунтом
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="login-form">
-            <label className="login-input-box" htmlFor="login-email">
-              <Mail className="login-input-icon" />
-              <input
-                id="login-email"
-                type="email"
-                required
-                autoComplete="username"
-                placeholder=" "
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              <span>Email</span>
-            </label>
-
-            <label className="login-input-box" htmlFor="login-password">
-              <Lock className="login-input-icon" />
-              <input
-                id="login-password"
-                type="password"
-                required
-                autoComplete="current-password"
-                placeholder=" "
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <span>Пароль</span>
-            </label>
-
-            {error && <div className="login-error">{error}</div>}
-
-            <Button type="submit" variant="primary" block disabled={busy}>
-              {busy ? 'Входим…' : 'Войти'}
-            </Button>
-          </form>
-        )}
       </div>
     </div>
   )
