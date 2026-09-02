@@ -24,10 +24,10 @@
   position: sticky;
   top: 0;
   z-index: 100;
-  background: color-mix(in srgb, var(--gesso-canvas) 88%, transparent);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid var(--gesso-glass-border);
+  /* No background/blur/border of its own on purpose — the photo (and the
+     one shared wash behind the whole app, see base.css) shows straight
+     through here instead of the topbar reading as a separate white strip
+     with a seam under it. */
   display: flex;
   align-items: center;
   justify-content: space-between;
