@@ -24,10 +24,21 @@ export interface OrderRow {
   /** Raw ISO timestamp — use this for sorting/filtering by recency. */
   createdAt: string
   total: string
+  /** Same amount as `total`, unformatted — for stats math (see lib/stats.ts). */
+  totalRaw: number
   deliveryFee: number
   payment: PaymentStatus
   status: OrderStatus
   products?: string
+}
+
+/** One order_items row, joined just enough for stats math (category
+ * breakdown, top products) — see lib/stats.ts. */
+export interface OrderItemRow {
+  orderId: string
+  productId: string | null
+  qty: number
+  unitPrice: number
 }
 
 export interface ProductRow {
@@ -79,6 +90,8 @@ export interface CustomerRow {
    * default; a customer requests it in the app, an admin grants it here. */
   bankTransferEnabled: boolean
   bankTransferRequested: boolean
+  /** Raw ISO timestamp — for stats math (see lib/stats.ts), same idea as OrderRow.createdAt. */
+  createdAt: string
 }
 
 export type DeliveryStatus = 'scheduled' | 'in-transit' | 'delayed' | 'delivered' | 'cancelled'
@@ -102,4 +115,6 @@ export interface DeliveryRow {
   driver: string
   eta: string
   status: DeliveryStatus
+  /** Raw ISO timestamp — for stats math (see lib/stats.ts). */
+  createdAt: string
 }

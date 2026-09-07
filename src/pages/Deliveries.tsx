@@ -7,7 +7,7 @@ import DeliveryStatusBadge from '../components/ui/DeliveryStatusBadge'
 import Dropdown from '../components/ui/Dropdown'
 import Modal from '../components/ui/Modal'
 import { useLanguage } from '../i18n/LanguageContext'
-import { deliveryKpis } from '../lib/data'
+import { computeDeliveryKpis } from '../lib/stats'
 import type { DeliveryStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -16,6 +16,7 @@ const DELIVERY_STATUSES: DeliveryStatus[] = ['scheduled', 'in-transit', 'delayed
 export default function Deliveries() {
   const { deliveries, drivers, assignDriver } = useData()
   const { t, label, ref: refText } = useLanguage()
+  const deliveryKpis = useMemo(() => computeDeliveryKpis(deliveries), [deliveries])
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [todayOnly, setTodayOnly] = useState(false)

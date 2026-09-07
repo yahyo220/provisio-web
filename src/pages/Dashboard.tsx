@@ -6,8 +6,8 @@ import Card from '../components/ui/Card'
 import PaymentLabel from '../components/ui/PaymentLabel'
 import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../i18n/LanguageContext'
-import { categoryBreakdownByRange, kpis, revenueByRange, topProductsByRange } from '../lib/data'
-import type { RevenueRange } from '../lib/data'
+import { computeCategoryBreakdown, computeDashboardKpis, computeRevenueChart, computeTopProducts } from '../lib/stats'
+import type { RevenueRange } from '../lib/stats'
 import { useData } from '../store/DataContext'
 
 const KPI_ICON = {
@@ -19,18 +19,25 @@ const KPI_ICON = {
 const RANGES: RevenueRange[] = ['1W', '1M', '3M', '1Y']
 
 export default function Dashboard() {
-  const { orders } = useData()
+  const { orders, orderItems, customers, products } = useData()
   const { t, label, ref: refText, category, unit } = useLanguage()
   const navigate = useNavigate()
   const [range, setRange] = useState<RevenueRange>('1M')
 
-  const chart = revenueByRange[range]
+  const kpis = useMemo(() => computeDashboardKpis(orders, customers), [orders, customers])
+  const chart = useMemo(() => computeRevenueChart(orders, range), [orders, range])
   const chartTop = useMemo(() => {
     const ys = chart.points.split(' ').map((p) => Number(p.split(',')[1]))
     return Math.min(...ys)
   }, [chart])
-  const topProducts = topProductsByRange[range]
-  const categories = categoryBreakdownByRange[range]
+  const topProducts = useMemo(
+    () => computeTopProducts(orders, orderItems, products, range),
+    [orders, orderItems, products, range],
+  )
+  const categories = useMemo(
+    () => computeCategoryBreakdown(orders, orderItems, products, range),
+    [orders, orderItems, products, range],
+  )
   const recentOrders = orders.slice(0, 5)
   const periodLabel = t(`period.${chart.periodKey}`)
 

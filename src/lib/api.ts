@@ -7,6 +7,7 @@ import type {
   DeliveryRow,
   DeliveryStatus,
   DriverRow,
+  OrderItemRow,
   OrderRow,
   OrderStatus,
   PaymentStatus,
@@ -24,6 +25,9 @@ export interface FetchedData {
   products: ProductRow[]
   customers: CustomerRow[]
   orders: OrderRow[]
+  /** Raw order_items, just enough of each to do stats math client-side (see
+   * lib/stats.ts) — category breakdown, top products, etc. */
+  orderItems: OrderItemRow[]
   deliveries: DeliveryRow[]
   drivers: string[]
   driverRows: DriverRow[]
@@ -38,7 +42,7 @@ export async function fetchAll(): Promise<FetchedData> {
     db.from('products').select('*').order('updated_at', { ascending: false }),
     db.from('customers').select('*').order('created_at', { ascending: false }),
     db.from('orders').select('*').order('created_at', { ascending: false }),
-    db.from('order_items').select('order_id, qty, unit_price'),
+    db.from('order_items').select('order_id, product_id, qty, unit_price'),
     db.from('deliveries').select('*').order('created_at', { ascending: false }),
     db.from('drivers').select('*').order('name', { ascending: true }),
   ])
@@ -87,6 +91,7 @@ export async function fetchAll(): Promise<FetchedData> {
       date: formatOrderDate(row.created_at),
       createdAt: row.created_at,
       total: formatMoney(total),
+      totalRaw: total,
       deliveryFee: Number(row.delivery_fee ?? 0),
       payment: row.payment as PaymentStatus,
       status: row.status as OrderStatus,
@@ -112,6 +117,7 @@ export async function fetchAll(): Promise<FetchedData> {
     bankTransferEnabled: Boolean(row.bank_transfer_enabled),
     bankTransferRequested: Boolean(row.bank_transfer_requested),
     hasLogin: Boolean(row.auth_user_id),
+    createdAt: row.created_at,
   }))
 
   const driverRows: DriverRow[] = (driversRes.data ?? []).map((row) => ({
@@ -137,12 +143,20 @@ export async function fetchAll(): Promise<FetchedData> {
       driver: driver?.name ?? '—',
       eta: row.eta || '—',
       status: row.status as DeliveryStatus,
+      createdAt: row.created_at,
     }
   })
 
   const drivers = (driversRes.data ?? []).map((d) => d.name)
 
-  return { products, customers, orders, deliveries, drivers, driverRows }
+  const orderItems: OrderItemRow[] = (itemsRes.data ?? []).map((item) => ({
+    orderId: item.order_id,
+    productId: item.product_id,
+    qty: Number(item.qty),
+    unitPrice: Number(item.unit_price),
+  }))
+
+  return { products, customers, orders, orderItems, deliveries, drivers, driverRows }
 }
 
 export async function insertProduct(product: {

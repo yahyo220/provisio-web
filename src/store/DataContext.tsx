@@ -23,7 +23,18 @@ import {
 } from '../lib/data'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
-import type { CustomerRow, CustomerStatus, DeliveryRow, DriverRow, OrderRow, OrderStatus, PaymentStatus, ProductRow, StockStatus } from '../lib/types'
+import type {
+  CustomerRow,
+  CustomerStatus,
+  DeliveryRow,
+  DriverRow,
+  OrderItemRow,
+  OrderRow,
+  OrderStatus,
+  PaymentStatus,
+  ProductRow,
+  StockStatus,
+} from '../lib/types'
 
 export interface NewProductInput {
   name: string
@@ -57,6 +68,9 @@ interface DataContextValue {
   removeProduct: (id: string) => Promise<void>
 
   orders: OrderRow[]
+  /** Raw order_items across every order — for stats math (see lib/stats.ts).
+   * Empty in disconnected/mock mode, same as everything else there. */
+  orderItems: OrderItemRow[]
   updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>
   updateOrderPayment: (id: string, payment: PaymentStatus) => Promise<void>
   removeOrder: (id: string) => Promise<void>
@@ -80,6 +94,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const [products, setProducts] = useState<ProductRow[]>(connected ? [] : mockProducts)
   const [orders, setOrders] = useState<OrderRow[]>(connected ? [] : mockOrders)
+  const [orderItems, setOrderItems] = useState<OrderItemRow[]>([])
   const [customers, setCustomers] = useState<CustomerRow[]>(connected ? [] : mockCustomers)
   const [deliveries, setDeliveries] = useState<DeliveryRow[]>(connected ? [] : mockDeliveries)
   const [drivers, setDrivers] = useState<string[]>(connected ? [] : mockDrivers)
@@ -91,6 +106,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const data = await fetchAll()
     setProducts(data.products)
     setOrders(data.orders)
+    setOrderItems(data.orderItems)
     setCustomers(data.customers)
     setDeliveries(data.deliveries)
     setDrivers(data.drivers)
@@ -181,6 +197,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
 
       orders,
+      orderItems,
       updateOrderStatus: async (id, status) => {
         if (!connected) {
           setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)))
@@ -228,6 +245,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               staffRole: '',
               bankTransferEnabled: false,
               bankTransferRequested: false,
+              createdAt: new Date().toISOString(),
             },
             ...prev,
           ])
@@ -270,7 +288,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await refresh()
       },
     }),
-    [connected, loading, products, orders, customers, deliveries, drivers, driverRows, refresh],
+    [connected, loading, products, orders, orderItems, customers, deliveries, drivers, driverRows, refresh],
   )
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>

@@ -7,14 +7,15 @@ import CustomerStatusBadge from '../components/ui/CustomerStatusBadge'
 import Dropdown from '../components/ui/Dropdown'
 import Pagination from '../components/ui/Pagination'
 import { useLanguage } from '../i18n/LanguageContext'
-import { customerKpis } from '../lib/data'
+import { computeCustomerKpis } from '../lib/stats'
 import { useData } from '../store/DataContext'
 
 const PAGE_SIZE = 5
 
 export default function Customers() {
-  const { customers } = useData()
+  const { customers, orders } = useData()
   const { t, label, ref: refText, customerType } = useLanguage()
+  const customerKpis = useMemo(() => computeCustomerKpis(customers, orders), [customers, orders])
   const [search, setSearch] = useState('')
   const [type, setType] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
