@@ -216,6 +216,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
               priceTier: 'with_price',
               hasLogin: false,
               staffRole: '',
+              bankTransferEnabled: false,
+              bankTransferRequested: false,
             },
             ...prev,
           ])

@@ -75,6 +75,10 @@ export interface CustomerRow {
   /** Role of the person who registered (e.g. "бармен", "повар") — informational,
    * since one account is often shared by several staff placing orders. */
   staffRole: string
+  /** "Перечисление" (bank transfer) as a checkout payment method — off by
+   * default; a customer requests it in the app, an admin grants it here. */
+  bankTransferEnabled: boolean
+  bankTransferRequested: boolean
 }
 
 export type DeliveryStatus = 'scheduled' | 'in-transit' | 'delayed' | 'delivered' | 'cancelled'

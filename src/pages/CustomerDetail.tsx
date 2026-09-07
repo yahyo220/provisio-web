@@ -47,6 +47,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const [priceTier, setPriceTier] = useState(customer.priceTier)
   const [saved, setSaved] = useState(false)
   const [approving, setApproving] = useState(false)
+  const [bankTransferEnabled, setBankTransferEnabled] = useState(customer.bankTransferEnabled)
+  const [bankTransferBusy, setBankTransferBusy] = useState(false)
 
   const customerOrders = orders.filter((o) => o.customerId === customer.id)
 
@@ -61,6 +63,18 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
       await updateCustomer(customer.id, { approvalStatus: 'approved', priceTier })
     } finally {
       setApproving(false)
+    }
+  }
+
+  // Applied immediately (not deferred to the big Save button) — granting or
+  // revoking a payment method reads as a permission, not a form field.
+  async function handleBankTransferToggle(next: boolean) {
+    setBankTransferBusy(true)
+    setBankTransferEnabled(next)
+    try {
+      await updateCustomer(customer.id, { bankTransferEnabled: next })
+    } finally {
+      setBankTransferBusy(false)
     }
   }
 
@@ -201,6 +215,25 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div className="status-row" style={{ marginTop: 16 }}>
+                <div>
+                  <div className="lbl">Оплата «Перечисление»</div>
+                  <div className="sub">
+                    {customer.bankTransferRequested && !bankTransferEnabled
+                      ? 'Клиент запросил доступ в приложении.'
+                      : bankTransferEnabled
+                        ? 'Может выбрать этот способ оплаты при заказе.'
+                        : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
+                  </div>
+                </div>
+                <Switch
+                  checked={bankTransferEnabled}
+                  onChange={handleBankTransferToggle}
+                  label="Оплата «Перечисление»"
+                  disabled={bankTransferBusy}
+                />
               </div>
             </Card>
           )}

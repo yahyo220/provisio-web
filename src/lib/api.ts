@@ -109,6 +109,8 @@ export async function fetchAll(): Promise<FetchedData> {
     approvalStatus: (row.approval_status ?? 'approved') as ApprovalStatus,
     priceTier: (row.price_tier ?? 'no_price') as PriceTier,
     staffRole: row.staff_role || '',
+    bankTransferEnabled: Boolean(row.bank_transfer_enabled),
+    bankTransferRequested: Boolean(row.bank_transfer_requested),
     hasLogin: Boolean(row.auth_user_id),
   }))
 
@@ -241,6 +243,12 @@ export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>)
   if (patch.status !== undefined) dbPatch.status = patch.status
   if (patch.approvalStatus !== undefined) dbPatch.approval_status = patch.approvalStatus
   if (patch.priceTier !== undefined) dbPatch.price_tier = patch.priceTier
+  if (patch.bankTransferEnabled !== undefined) {
+    dbPatch.bank_transfer_enabled = patch.bankTransferEnabled
+    // Granting (or explicitly revoking) always clears the pending ask —
+    // there's nothing left to act on either way.
+    dbPatch.bank_transfer_requested = false
+  }
   const { error } = await db.from('customers').update(dbPatch).eq('id', id)
   if (error) throw error
 }
