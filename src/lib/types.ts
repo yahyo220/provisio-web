@@ -72,6 +72,9 @@ export interface CustomerRow {
   approvalStatus: ApprovalStatus
   priceTier: PriceTier
   hasLogin: boolean
+  /** Role of the person who registered (e.g. "бармен", "повар") — informational,
+   * since one account is often shared by several staff placing orders. */
+  staffRole: string
 }
 
 export type DeliveryStatus = 'scheduled' | 'in-transit' | 'delayed' | 'delivered' | 'cancelled'

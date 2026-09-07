@@ -108,6 +108,7 @@ export async function fetchAll(): Promise<FetchedData> {
     initials: initialsOf(row.name),
     approvalStatus: (row.approval_status ?? 'approved') as ApprovalStatus,
     priceTier: (row.price_tier ?? 'no_price') as PriceTier,
+    staffRole: row.staff_role || '',
     hasLogin: Boolean(row.auth_user_id),
   }))
 

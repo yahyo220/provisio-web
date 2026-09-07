@@ -215,6 +215,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               approvalStatus: 'approved',
               priceTier: 'with_price',
               hasLogin: false,
+              staffRole: '',
             },
             ...prev,
           ])

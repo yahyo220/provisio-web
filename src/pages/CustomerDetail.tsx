@@ -232,6 +232,12 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
                 </span>
                 <span className="v">{customer.email || '—'}</span>
               </div>
+              {customer.staffRole && (
+                <div className="info-row">
+                  <span className="k">Должность</span>
+                  <span className="v">{customer.staffRole}</span>
+                </div>
+              )}
             </div>
           </Card>
 

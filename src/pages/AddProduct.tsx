@@ -28,25 +28,41 @@ export default function AddProduct() {
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
   const [priceExternal, setPriceExternal] = useState('')
-  const [photo, setPhoto] = useState<string | null>(null)
+  // Selecting a file just previews it locally (an object URL, nothing sent
+  // anywhere yet) — so a bad photo can be swapped out before it's actually
+  // uploaded. The real upload happens once, in handleSave, only for a photo
+  // that's still selected when the admin actually saves.
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
+  const photoPreviewUrlRef = useRef<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  async function handlePhotoSelect(file: File) {
-    setUploading(true)
-    setPhotoError(null)
-    try {
-      // No product id yet — group the upload under a throwaway random one;
-      // nothing else needs it to match the product's eventual id.
-      const url = await uploadProductPhoto(file, crypto.randomUUID())
-      setPhoto(url)
-    } catch {
-      setPhotoError(t('productDetail.photoUploadFailed'))
-    } finally {
-      setUploading(false)
-    }
+  function setPreview(url: string | null) {
+    if (photoPreviewUrlRef.current) URL.revokeObjectURL(photoPreviewUrlRef.current)
+    photoPreviewUrlRef.current = url
+    setPhotoPreviewUrl(url)
   }
+
+  function handlePhotoSelect(file: File) {
+    setPhotoError(null)
+    setPreview(URL.createObjectURL(file))
+    setPhotoFile(file)
+  }
+
+  function clearPhoto() {
+    setPreview(null)
+    setPhotoFile(null)
+  }
+
+  // Revoke whatever preview URL is live when the form goes away, so a
+  // discarded add-product visit doesn't leak the blob.
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrlRef.current) URL.revokeObjectURL(photoPreviewUrlRef.current)
+    }
+  }, [])
 
   // The SKU field is pre-filled with the next suggested code for whichever
   // category is selected (e.g. "F-0001" for the first fruit), so admins get
@@ -63,6 +79,21 @@ export default function AddProduct() {
 
   async function handleSave(andAddAnother: boolean) {
     if (!name.trim() || !sku.trim()) return
+    let imageUrl: string | undefined
+    if (photoFile) {
+      setUploading(true)
+      setPhotoError(null)
+      try {
+        // No product id yet — group the upload under a throwaway random one;
+        // nothing else needs it to match the product's eventual id.
+        imageUrl = await uploadProductPhoto(photoFile, crypto.randomUUID())
+      } catch {
+        setUploading(false)
+        setPhotoError(t('productDetail.photoUploadFailed'))
+        return
+      }
+      setUploading(false)
+    }
     await addProduct({
       name,
       sku,
@@ -73,7 +104,7 @@ export default function AddProduct() {
       units: selectedUnits,
       stock,
       active,
-      imageUrl: photo ?? undefined,
+      imageUrl,
     })
     if (andAddAnother) {
       setName('')
@@ -82,8 +113,7 @@ export default function AddProduct() {
       setSku(suggestNextSku(selectedCategory, [...products, { sku }]))
       setPrice('')
       setPriceExternal('')
-      setPhoto(null)
-      setPhotoError(null)
+      clearPhoto()
     } else {
       navigate('/products')
     }
@@ -100,10 +130,10 @@ export default function AddProduct() {
           <Link to="/products" className="btn btn-text">
             {t('common.discard')}
           </Link>
-          <Button variant="ghost" onClick={() => handleSave(true)}>
+          <Button variant="ghost" onClick={() => handleSave(true)} disabled={uploading}>
             {t('addProduct.saveAndAddAnother')}
           </Button>
-          <Button variant="primary" icon={<Check />} onClick={() => handleSave(false)}>
+          <Button variant="primary" icon={<Check />} onClick={() => handleSave(false)} disabled={uploading}>
             {t('addProduct.saveProduct')}
           </Button>
         </div>
@@ -124,15 +154,15 @@ export default function AddProduct() {
                 e.target.value = ''
               }}
             />
-            {photo ? (
+            {photoPreviewUrl ? (
               <div className="thumb-strip" style={{ gridTemplateColumns: '1fr', marginTop: 20 }}>
                 <div className="thumb">
-                  <img src={photo} alt="" />
+                  <img src={photoPreviewUrl} alt="" />
                   <button
                     type="button"
                     className="remove-btn"
                     aria-label={t('productDetail.removePhoto')}
-                    onClick={() => setPhoto(null)}
+                    onClick={clearPhoto}
                   >
                     <X />
                   </button>
@@ -152,11 +182,14 @@ export default function AddProduct() {
                 <div className="upload-icon">
                   <ImagePlus />
                 </div>
-                <div className="up-title">{uploading ? t('productDetail.uploadingPhoto') : t('addProduct.dropImages')}</div>
+                <div className="up-title">{t('addProduct.dropImages')}</div>
                 <div className="up-sub">{t('addProduct.uploadHint')}</div>
               </div>
             )}
             {photoError && <p style={{ color: 'var(--gesso-danger)', fontSize: 13, marginTop: 8 }}>{photoError}</p>}
+            {uploading && (
+              <p style={{ color: 'var(--gesso-fg-muted)', fontSize: 13, marginTop: 8 }}>{t('productDetail.uploadingPhoto')}</p>
+            )}
           </Card>
 
           <Card>
@@ -310,10 +343,10 @@ export default function AddProduct() {
               <Link to="/products" className="btn btn-text">
                 {t('common.cancel')}
               </Link>
-              <Button variant="ghost" onClick={() => handleSave(true)}>
+              <Button variant="ghost" onClick={() => handleSave(true)} disabled={uploading}>
                 {t('addProduct.saveAndAddAnother')}
               </Button>
-              <Button variant="primary" icon={<Check />} onClick={() => handleSave(false)}>
+              <Button variant="primary" icon={<Check />} onClick={() => handleSave(false)} disabled={uploading}>
                 {t('addProduct.saveProduct')}
               </Button>
             </div>

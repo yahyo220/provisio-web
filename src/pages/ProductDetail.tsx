@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, ChevronDown, ImagePlus, Trash2, X } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
@@ -47,29 +47,61 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   const [stock, setStock] = useState<StockStatus>(product.stock)
   const [active, setActive] = useState(product.active)
   const [saved, setSaved] = useState(false)
-  // null = no real photo (shows the placeholder) — distinct from `product.image`,
-  // which is never empty (fetchAll already falls back to the placeholder there).
+  // `photo` = the currently *saved* image (existing hosted URL, or null if
+  // there never was one / it was removed). Picking a new file doesn't touch
+  // it or upload anything yet — it just previews locally (`pendingFile` +
+  // its object URL) so a bad photo can be swapped before it's ever sent
+  // anywhere; the real upload happens once, in handleSave, only if a new
+  // file is still pending when the admin actually saves.
   const [photo, setPhoto] = useState<string | null>(product.image === placeholderImage ? null : product.image)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null)
+  const pendingPreviewUrlRef = useRef<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const categoryOptions = Array.from(new Set([product.category, ...ALL_CATEGORIES]))
+  const displayedPhoto = pendingPreviewUrl ?? photo
 
-  async function handlePhotoSelect(file: File) {
-    setUploading(true)
-    setPhotoError(null)
-    try {
-      const url = await uploadProductPhoto(file, product.id)
-      setPhoto(url)
-    } catch {
-      setPhotoError(t('productDetail.photoUploadFailed'))
-    } finally {
-      setUploading(false)
-    }
+  function setPreview(url: string | null) {
+    if (pendingPreviewUrlRef.current) URL.revokeObjectURL(pendingPreviewUrlRef.current)
+    pendingPreviewUrlRef.current = url
+    setPendingPreviewUrl(url)
   }
 
-  function handleSave() {
+  function handlePhotoSelect(file: File) {
+    setPhotoError(null)
+    setPreview(URL.createObjectURL(file))
+    setPendingFile(file)
+  }
+
+  function clearPhoto() {
+    setPreview(null)
+    setPendingFile(null)
+    setPhoto(null)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (pendingPreviewUrlRef.current) URL.revokeObjectURL(pendingPreviewUrlRef.current)
+    }
+  }, [])
+
+  async function handleSave() {
+    let image = photo ?? ''
+    if (pendingFile) {
+      setUploading(true)
+      setPhotoError(null)
+      try {
+        image = await uploadProductPhoto(pendingFile, product.id)
+      } catch {
+        setUploading(false)
+        setPhotoError(t('productDetail.photoUploadFailed'))
+        return
+      }
+      setUploading(false)
+    }
     updateProduct(product.id, {
       name,
       category: productCategory,
@@ -79,7 +111,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
       units: selectedUnits,
       stock,
       active,
-      image: photo ?? '',
+      image,
       updated: 'Just now',
     })
     setSaved(true)
@@ -110,7 +142,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
           >
             {t('productDetail.delete')}
           </Button>
-          <Button variant="primary" icon={<Check />} onClick={handleSave}>
+          <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={uploading}>
             {t('common.saveChanges')}
           </Button>
         </div>
@@ -146,15 +178,15 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
                 e.target.value = ''
               }}
             />
-            {photo ? (
+            {displayedPhoto ? (
               <div className="thumb-strip" style={{ gridTemplateColumns: '1fr', marginTop: 20 }}>
                 <div className="thumb">
-                  <img src={photo} alt={product.name} />
+                  <img src={displayedPhoto} alt={product.name} />
                   <button
                     type="button"
                     className="remove-btn"
                     aria-label={t('productDetail.removePhoto')}
-                    onClick={() => setPhoto(null)}
+                    onClick={clearPhoto}
                   >
                     <X />
                   </button>
@@ -175,11 +207,11 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
                 <div className="upload-icon">
                   <ImagePlus />
                 </div>
-                <div className="up-title">{uploading ? t('productDetail.uploadingPhoto') : t('addProduct.dropImages')}</div>
+                <div className="up-title">{t('addProduct.dropImages')}</div>
                 <div className="up-sub">{t('addProduct.uploadHint')}</div>
               </div>
             )}
-            {photo && (
+            {displayedPhoto && (
               <Button
                 variant="ghost"
                 icon={<ImagePlus />}
@@ -310,7 +342,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               <Link to="/products" className="btn btn-text">
                 {t('common.cancel')}
               </Link>
-              <Button variant="primary" icon={<Check />} onClick={handleSave}>
+              <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={uploading}>
                 {t('common.saveChanges')}
               </Button>
             </div>
