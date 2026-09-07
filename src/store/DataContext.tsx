@@ -10,6 +10,7 @@ import {
   insertProduct,
   updateCustomerRow,
   updateDeliveryRow,
+  updateOrderPayment as updateOrderPaymentRow,
   updateOrderStatus as updateOrderStatusRow,
   updateProductRow,
 } from '../lib/api'
@@ -22,7 +23,7 @@ import {
 } from '../lib/data'
 import { supabase } from '../lib/supabase'
 import { formatMoney } from '../lib/format'
-import type { CustomerRow, CustomerStatus, DeliveryRow, DriverRow, OrderRow, OrderStatus, ProductRow, StockStatus } from '../lib/types'
+import type { CustomerRow, CustomerStatus, DeliveryRow, DriverRow, OrderRow, OrderStatus, PaymentStatus, ProductRow, StockStatus } from '../lib/types'
 
 export interface NewProductInput {
   name: string
@@ -57,6 +58,7 @@ interface DataContextValue {
 
   orders: OrderRow[]
   updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>
+  updateOrderPayment: (id: string, payment: PaymentStatus) => Promise<void>
   removeOrder: (id: string) => Promise<void>
 
   customers: CustomerRow[]
@@ -185,6 +187,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return
         }
         await updateOrderStatusRow(id, status)
+        await refresh()
+      },
+      updateOrderPayment: async (id, payment) => {
+        if (!connected) {
+          setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, payment } : o)))
+          return
+        }
+        await updateOrderPaymentRow(id, payment)
         await refresh()
       },
       removeOrder: async (id) => {

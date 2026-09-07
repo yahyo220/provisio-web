@@ -12,7 +12,7 @@ import { orderTimeline, relatedOrders } from '../lib/data'
 import { downloadOrderExcel } from '../lib/exportOrderExcel'
 import { formatMoney } from '../lib/format'
 import { supabase } from '../lib/supabase'
-import type { OrderRow, OrderStatus } from '../lib/types'
+import type { OrderRow, OrderStatus, PaymentStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
 const RELATED_ICON = { package: Package, 'package-x': PackageX }
@@ -39,13 +39,15 @@ export default function OrderDetail() {
 }
 
 function OrderDetailForm({ order }: { order: OrderRow }) {
-  const { updateOrderStatus, customers } = useData()
+  const { updateOrderStatus, updateOrderPayment, customers } = useData()
   const { t, unit } = useLanguage()
   const customer = customers.find((c) => c.id === order.customerId)
 
   const [lineItems, setLineItems] = useState<OrderLineItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(Boolean(supabase))
   const [status, setStatus] = useState<OrderStatus>(order.status)
+  const [payment, setPayment] = useState<PaymentStatus>(order.payment)
+  const [markingPaid, setMarkingPaid] = useState(false)
   const [feedback, setFeedback] = useState<OrderFeedbackRow[]>([])
   const [exportingExcel, setExportingExcel] = useState(false)
   // While a price field is mid-edit, its displayed text is tracked here
@@ -119,6 +121,16 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
   function changeStatus(next: OrderStatus) {
     setStatus(next)
     updateOrderStatus(order.id, next).catch((err) => console.error(err))
+  }
+
+  async function markPaid() {
+    setMarkingPaid(true)
+    try {
+      await updateOrderPayment(order.id, 'paid')
+      setPayment('paid')
+    } finally {
+      setMarkingPaid(false)
+    }
   }
 
   async function handleExportExcel() {
@@ -340,11 +352,16 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
               </div>
               <div className="info-row">
                 <span className="k">{t('orderDetail.paymentStatus')}</span>
-                <span className="v" style={order.payment === 'paid' ? { color: 'var(--gesso-accent)' } : undefined}>
-                  {t(`payment.${order.payment}`)}
+                <span className="v" style={payment === 'paid' ? { color: 'var(--gesso-accent)' } : undefined}>
+                  {t(`payment.${payment}`)}
                 </span>
               </div>
             </div>
+            {payment !== 'paid' && (
+              <Button variant="ghost" block onClick={markPaid} disabled={markingPaid} style={{ marginTop: 12 }}>
+                {markingPaid ? 'Отмечаем…' : 'Отметить как оплачено'}
+              </Button>
+            )}
           </Card>
 
           <Card>

@@ -305,6 +305,12 @@ export async function updateOrderStatus(id: string, status: string) {
   if (error) throw error
 }
 
+export async function updateOrderPayment(id: string, payment: string) {
+  const db = assertClient()
+  const { error } = await db.from('orders').update({ payment }).eq('id', id)
+  if (error) throw error
+}
+
 export async function deleteOrderRow(id: string) {
   const db = assertClient()
   const { error } = await db.from('orders').delete().eq('id', id)
