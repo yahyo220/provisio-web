@@ -41,6 +41,15 @@ export interface OrderItemRow {
   unitPrice: number
 }
 
+/** Price (and optional external price) for one of a product's non-primary
+ * units — see ProductRow.unitPrices. Formatted display strings, same
+ * convention as ProductRow.price/priceExternal ('' = not set). */
+export interface UnitPriceRow {
+  unit: string
+  price: string
+  priceExternal: string
+}
+
 export interface ProductRow {
   id: string
   name: string
@@ -52,6 +61,12 @@ export interface ProductRow {
   unit: string
   /** Up to 3 units this product can be ordered in (e.g. кг/пучок/шт). Empty = just `unit`. */
   units: string[]
+  /** Price override for units[1:] — units[0] always uses price/priceExternal above. */
+  unitPrices: UnitPriceRow[]
+  /** Other products that are really "this same product, different variety"
+   * (e.g. three tomato types) — admin-linked, not automatic. Null/shared
+   * with no one = no variant picker shown in the app. */
+  variantGroupId: string | null
   stock: StockStatus
   active: boolean
   updated: string

@@ -36,7 +36,7 @@ export default function ProductDetail() {
 
 function ProductDetailForm({ product }: { product: ProductRow }) {
   const navigate = useNavigate()
-  const { updateProduct, removeProduct } = useData()
+  const { updateProduct, removeProduct, products } = useData()
   const { t, category, unit } = useLanguage()
 
   const [name, setName] = useState(product.name)
@@ -44,6 +44,14 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   const [price, setPrice] = useState(product.price.replace(/[^\d.]/g, ''))
   const [priceExternal, setPriceExternal] = useState(product.priceExternal.replace(/[^\d.]/g, ''))
   const [selectedUnits, setSelectedUnits] = useState<string[]>(product.units.length > 0 ? product.units : [product.unit])
+  const [unitPrices, setUnitPrices] = useState<Record<string, { price: string; priceExternal: string }>>(
+    Object.fromEntries(
+      product.unitPrices.map((u) => [u.unit, { price: u.price.replace(/[^\d.]/g, ''), priceExternal: u.priceExternal.replace(/[^\d.]/g, '') }]),
+    ),
+  )
+  const extraUnits = selectedUnits.slice(1)
+  const [variantGroupId, setVariantGroupId] = useState(product.variantGroupId)
+  const [addVariantId, setAddVariantId] = useState('')
   const [stock, setStock] = useState<StockStatus>(product.stock)
   const [active, setActive] = useState(product.active)
   const [saved, setSaved] = useState(false)
@@ -109,12 +117,42 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
       priceExternal,
       unit: selectedUnits[0] ?? product.unit,
       units: selectedUnits,
+      unitPrices: extraUnits.map((u) => ({
+        unit: u,
+        price: unitPrices[u]?.price ?? '',
+        priceExternal: unitPrices[u]?.priceExternal ?? '',
+      })),
       stock,
       active,
       image,
       updated: 'Just now',
     })
     setSaved(true)
+  }
+
+  // Variant linking is immediate (not part of the Save-changes batch above)
+  // since it touches OTHER products' rows too — mixing that into one
+  // deferred patch would be confusing ("did saving this product just
+  // silently edit that one too?").
+  const siblings = variantGroupId ? products.filter((p) => p.variantGroupId === variantGroupId && p.id !== product.id) : []
+  const availableForVariant = products.filter(
+    (p) => p.id !== product.id && (variantGroupId === null || p.variantGroupId !== variantGroupId),
+  )
+
+  async function addVariant(otherId: string) {
+    if (!otherId) return
+    let gid = variantGroupId
+    if (!gid) {
+      gid = crypto.randomUUID()
+      await updateProduct(product.id, { variantGroupId: gid })
+      setVariantGroupId(gid)
+    }
+    await updateProduct(otherId, { variantGroupId: gid })
+    setAddVariantId('')
+  }
+
+  async function removeVariant(otherId: string) {
+    await updateProduct(otherId, { variantGroupId: null })
   }
 
   return (
@@ -306,6 +344,55 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               </div>
             </div>
 
+            {extraUnits.length > 0 && (
+              <div className="field">
+                <label>Цены по остальным единицам — {unit(selectedUnits[0])} использует цену выше</label>
+                {extraUnits.map((u) => (
+                  <div key={u} className="field-row" style={{ alignItems: 'flex-end' }}>
+                    <div className="field" style={{ flex: '0 0 88px' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{unit(u)}</span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`pd-up-price-${u}`}>{t('common.price')}</label>
+                      <div className="price-input suffixed">
+                        <input
+                          id={`pd-up-price-${u}`}
+                          type="text"
+                          placeholder="0"
+                          value={unitPrices[u]?.price ?? ''}
+                          onChange={(e) =>
+                            setUnitPrices((prev) => ({
+                              ...prev,
+                              [u]: { price: e.target.value, priceExternal: prev[u]?.priceExternal ?? '' },
+                            }))
+                          }
+                        />
+                        <span className="suffix">сум</span>
+                      </div>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`pd-up-price-ext-${u}`}>Для внешних (необяз.)</label>
+                      <div className="price-input suffixed">
+                        <input
+                          id={`pd-up-price-ext-${u}`}
+                          type="text"
+                          placeholder="Как обычная"
+                          value={unitPrices[u]?.priceExternal ?? ''}
+                          onChange={(e) =>
+                            setUnitPrices((prev) => ({
+                              ...prev,
+                              [u]: { price: prev[u]?.price ?? '', priceExternal: e.target.value },
+                            }))
+                          }
+                        />
+                        <span className="suffix">сум</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="field">
               <label htmlFor="pd-price-ext">Цена для внешних клиентов (необязательно)</label>
               <div className="price-input suffixed">
@@ -344,6 +431,51 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               </Link>
               <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={uploading}>
                 {t('common.saveChanges')}
+              </Button>
+            </div>
+          </Card>
+
+          <Card>
+            <p className="section-label">Варианты товара</p>
+            <p style={{ fontSize: 13, color: 'var(--gesso-fg-muted)', marginTop: 4 }}>
+              Свяжи с другими товарами, которые на самом деле один и тот же товар, только другой вид (например 3 вида
+              помидоров) — в приложении покупатель сможет переключаться между ними прямо внутри карточки товара.
+              Изменения здесь применяются сразу, без кнопки «Сохранить».
+            </p>
+            {siblings.length > 0 && (
+              <div className="chip-row" style={{ marginTop: 12 }}>
+                {siblings.map((s) => (
+                  <span key={s.id} className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {s.name}
+                    <button
+                      type="button"
+                      onClick={() => removeVariant(s.id)}
+                      aria-label={`Убрать «${s.name}» из вариантов`}
+                      style={{ display: 'inline-flex', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="field-row" style={{ marginTop: 12, alignItems: 'flex-end' }}>
+              <div className="field">
+                <label htmlFor="pd-add-variant">Добавить товар в варианты</label>
+                <div className="select-wrap">
+                  <select id="pd-add-variant" value={addVariantId} onChange={(e) => setAddVariantId(e.target.value)}>
+                    <option value="">Выбери товар…</option>
+                    {availableForVariant.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.sku} — {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown />
+                </div>
+              </div>
+              <Button variant="ghost" onClick={() => addVariant(addVariantId)} disabled={!addVariantId}>
+                Добавить
               </Button>
             </div>
           </Card>

@@ -28,6 +28,11 @@ export default function AddProduct() {
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
   const [priceExternal, setPriceExternal] = useState('')
+  // Price override per unit beyond the first — the first selected unit
+  // always uses price/priceExternal above. Keyed by unit so toggling units
+  // off and back on doesn't lose what was already typed.
+  const [unitPrices, setUnitPrices] = useState<Record<string, { price: string; priceExternal: string }>>({})
+  const extraUnits = selectedUnits.slice(1)
   // Selecting a file just previews it locally (an object URL, nothing sent
   // anywhere yet) — so a bad photo can be swapped out before it's actually
   // uploaded. The real upload happens once, in handleSave, only for a photo
@@ -102,6 +107,11 @@ export default function AddProduct() {
       priceExternal: priceExternal.trim() ? Number(priceExternal) : null,
       unit: selectedUnits[0] ?? 'box',
       units: selectedUnits,
+      unitPrices: extraUnits.map((u) => ({
+        unit: u,
+        price: Number(unitPrices[u]?.price || 0),
+        priceExternal: unitPrices[u]?.priceExternal?.trim() ? Number(unitPrices[u]!.priceExternal) : null,
+      })),
       stock,
       active,
       imageUrl,
@@ -113,6 +123,7 @@ export default function AddProduct() {
       setSku(suggestNextSku(selectedCategory, [...products, { sku }]))
       setPrice('')
       setPriceExternal('')
+      setUnitPrices({})
       clearPhoto()
     } else {
       navigate('/products')
@@ -320,6 +331,55 @@ export default function AddProduct() {
                 })}
               </div>
             </div>
+
+            {extraUnits.length > 0 && (
+              <div className="field">
+                <label>Цены по остальным единицам — {unit(selectedUnits[0])} использует цену выше</label>
+                {extraUnits.map((u) => (
+                  <div key={u} className="field-row" style={{ alignItems: 'flex-end' }}>
+                    <div className="field" style={{ flex: '0 0 88px' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{unit(u)}</span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`up-price-${u}`}>{t('common.price')}</label>
+                      <div className="price-input suffixed">
+                        <input
+                          id={`up-price-${u}`}
+                          type="text"
+                          placeholder="0"
+                          value={unitPrices[u]?.price ?? ''}
+                          onChange={(e) =>
+                            setUnitPrices((prev) => ({
+                              ...prev,
+                              [u]: { price: e.target.value, priceExternal: prev[u]?.priceExternal ?? '' },
+                            }))
+                          }
+                        />
+                        <span className="suffix">сум</span>
+                      </div>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`up-price-ext-${u}`}>Для внешних (необяз.)</label>
+                      <div className="price-input suffixed">
+                        <input
+                          id={`up-price-ext-${u}`}
+                          type="text"
+                          placeholder="Как обычная"
+                          value={unitPrices[u]?.priceExternal ?? ''}
+                          onChange={(e) =>
+                            setUnitPrices((prev) => ({
+                              ...prev,
+                              [u]: { price: prev[u]?.price ?? '', priceExternal: e.target.value },
+                            }))
+                          }
+                        />
+                        <span className="suffix">сум</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="field">
               <label>{t('productDetail.stockAvailability')}</label>

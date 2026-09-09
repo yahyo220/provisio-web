@@ -60,6 +60,14 @@ export async function fetchAll(): Promise<FetchedData> {
     priceExternal: row.price_external != null ? formatMoney(Number(row.price_external)) : '',
     unit: row.unit,
     units: Array.isArray(row.units) ? row.units : [],
+    unitPrices: Array.isArray(row.unit_prices)
+      ? row.unit_prices.map((u: { unit: string; price: number; price_external: number | null }) => ({
+          unit: u.unit,
+          price: formatMoney(Number(u.price)),
+          priceExternal: u.price_external != null ? formatMoney(Number(u.price_external)) : '',
+        }))
+      : [],
+    variantGroupId: row.variant_group_id ?? null,
     stock: row.stock as StockStatus,
     active: row.active,
     updated: formatRelative(row.updated_at),
@@ -167,6 +175,7 @@ export async function insertProduct(product: {
   priceExternal?: number | null
   unit: string
   units?: string[]
+  unitPrices?: { unit: string; price: number; priceExternal?: number | null }[]
   stock: StockStatus
   active: boolean
   imageUrl?: string
@@ -180,6 +189,11 @@ export async function insertProduct(product: {
     price_external: product.priceExternal ?? null,
     unit: product.unit,
     units: product.units && product.units.length > 0 ? product.units : null,
+    unit_prices: (product.unitPrices ?? []).map((u) => ({
+      unit: u.unit,
+      price: u.price,
+      price_external: u.priceExternal ?? null,
+    })),
     stock: product.stock,
     active: product.active,
     image_url: product.imageUrl ?? null,
@@ -199,6 +213,14 @@ export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
   }
   if (patch.unit !== undefined) dbPatch.unit = patch.unit
   if (patch.units !== undefined) dbPatch.units = patch.units.length > 0 ? patch.units : null
+  if (patch.unitPrices !== undefined) {
+    dbPatch.unit_prices = patch.unitPrices.map((u) => ({
+      unit: u.unit,
+      price: Number(u.price.replace(/[^\d.]/g, '')) || 0,
+      price_external: u.priceExternal.trim() ? Number(u.priceExternal.replace(/[^\d.]/g, '')) : null,
+    }))
+  }
+  if (patch.variantGroupId !== undefined) dbPatch.variant_group_id = patch.variantGroupId
   if (patch.stock !== undefined) dbPatch.stock = patch.stock
   if (patch.active !== undefined) dbPatch.active = patch.active
   // Empty string (photo removed, falls back to the placeholder at display
