@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
+import LangField from '../components/ui/LangField'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS, placeholderImage } from '../lib/data'
@@ -40,7 +41,13 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   const { t, category, unit } = useLanguage()
 
   const [name, setName] = useState(product.name)
+  const [nameUzCyrl, setNameUzCyrl] = useState(product.nameUzCyrl)
+  const [nameUzLatn, setNameUzLatn] = useState(product.nameUzLatn)
+  const [nameEn, setNameEn] = useState(product.nameEn)
   const [description, setDescription] = useState(product.description)
+  const [descriptionUzCyrl, setDescriptionUzCyrl] = useState(product.descriptionUzCyrl)
+  const [descriptionUzLatn, setDescriptionUzLatn] = useState(product.descriptionUzLatn)
+  const [descriptionEn, setDescriptionEn] = useState(product.descriptionEn)
   const [productCategory, setProductCategory] = useState(product.category)
   const [price, setPrice] = useState(product.price.replace(/[^\d.]/g, ''))
   const [priceExternal, setPriceExternal] = useState(product.priceExternal.replace(/[^\d.]/g, ''))
@@ -113,7 +120,13 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
     }
     updateProduct(product.id, {
       name,
+      nameUzCyrl,
+      nameUzLatn,
+      nameEn,
       description,
+      descriptionUzCyrl,
+      descriptionUzLatn,
+      descriptionEn,
       category: productCategory,
       price: String(Number(price || 0)),
       priceExternal,
@@ -283,20 +296,31 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
           <Card>
             <p className="section-label">{t('productDetail.productDetails')}</p>
 
-            <div className="field">
-              <label htmlFor="pd-name">{t('productDetail.productName')}</label>
-              <input id="pd-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
+            <LangField
+              id="pd-name"
+              label={t('productDetail.productName')}
+              values={{ ru: name, uzCyrl: nameUzCyrl, uzLatn: nameUzLatn, en: nameEn }}
+              onChange={(lang, value) => {
+                if (lang === 'ru') setName(value)
+                else if (lang === 'uzCyrl') setNameUzCyrl(value)
+                else if (lang === 'uzLatn') setNameUzLatn(value)
+                else setNameEn(value)
+              }}
+            />
 
-            <div className="field">
-              <label htmlFor="pd-desc">{t('addProduct.description')}</label>
-              <textarea
-                id="pd-desc"
-                placeholder="Origin, quality grade, storage notes…"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
+            <LangField
+              id="pd-desc"
+              label={t('addProduct.description')}
+              placeholder="Origin, quality grade, storage notes…"
+              multiline
+              values={{ ru: description, uzCyrl: descriptionUzCyrl, uzLatn: descriptionUzLatn, en: descriptionEn }}
+              onChange={(lang, value) => {
+                if (lang === 'ru') setDescription(value)
+                else if (lang === 'uzCyrl') setDescriptionUzCyrl(value)
+                else if (lang === 'uzLatn') setDescriptionUzLatn(value)
+                else setDescriptionEn(value)
+              }}
+            />
 
             <div className="field-row">
               <div className="field">
@@ -360,9 +384,10 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               <div className="field">
                 <label>Цены по остальным единицам — {unit(selectedUnits[0])} использует цену выше</label>
                 {extraUnits.map((u) => (
-                  <div key={u} className="field-row" style={{ alignItems: 'flex-end' }}>
-                    <div className="field" style={{ flex: '0 0 88px' }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{unit(u)}</span>
+                  <div key={u} className="unit-price-row">
+                    <div className="field unit-price-tag-field">
+                      <label>{t('common.unit')}</label>
+                      <div className="unit-price-tag">{unit(u)}</div>
                     </div>
                     <div className="field">
                       <label htmlFor={`pd-up-price-${u}`}>{t('common.price')}</label>

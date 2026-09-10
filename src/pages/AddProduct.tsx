@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
+import LangField from '../components/ui/LangField'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
 import { uploadProductPhoto } from '../lib/api'
@@ -23,7 +24,13 @@ export default function AddProduct() {
   const [selectedUnits, setSelectedUnits] = useState<string[]>(['box'])
   const [stock, setStock] = useState<StockStatus>('in')
   const [name, setName] = useState('')
+  const [nameUzCyrl, setNameUzCyrl] = useState('')
+  const [nameUzLatn, setNameUzLatn] = useState('')
+  const [nameEn, setNameEn] = useState('')
   const [description, setDescription] = useState('')
+  const [descriptionUzCyrl, setDescriptionUzCyrl] = useState('')
+  const [descriptionUzLatn, setDescriptionUzLatn] = useState('')
+  const [descriptionEn, setDescriptionEn] = useState('')
   const [selectedCategory, setSelectedCategory] = useState(CATEGORIES[0])
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
@@ -113,13 +120,25 @@ export default function AddProduct() {
         priceExternal: unitPrices[u]?.priceExternal?.trim() ? Number(unitPrices[u]!.priceExternal) : null,
       })),
       description,
+      nameUzCyrl,
+      nameUzLatn,
+      nameEn,
+      descriptionUzCyrl,
+      descriptionUzLatn,
+      descriptionEn,
       stock,
       active,
       imageUrl,
     })
     if (andAddAnother) {
       setName('')
+      setNameUzCyrl('')
+      setNameUzLatn('')
+      setNameEn('')
       setDescription('')
+      setDescriptionUzCyrl('')
+      setDescriptionUzLatn('')
+      setDescriptionEn('')
       skuTouched.current = false
       setSku(suggestNextSku(selectedCategory, [...products, { sku }]))
       setPrice('')
@@ -219,26 +238,32 @@ export default function AddProduct() {
           <Card>
             <p className="section-label">{t('productDetail.productDetails')}</p>
 
-            <div className="field">
-              <label htmlFor="p-name">{t('productDetail.productName')}</label>
-              <input
-                id="p-name"
-                type="text"
-                placeholder="e.g. Heirloom Tomatoes, 5kg crate"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
+            <LangField
+              id="p-name"
+              label={t('productDetail.productName')}
+              placeholder="e.g. Heirloom Tomatoes, 5kg crate"
+              values={{ ru: name, uzCyrl: nameUzCyrl, uzLatn: nameUzLatn, en: nameEn }}
+              onChange={(lang, value) => {
+                if (lang === 'ru') setName(value)
+                else if (lang === 'uzCyrl') setNameUzCyrl(value)
+                else if (lang === 'uzLatn') setNameUzLatn(value)
+                else setNameEn(value)
+              }}
+            />
 
-            <div className="field">
-              <label htmlFor="p-desc">{t('addProduct.description')}</label>
-              <textarea
-                id="p-desc"
-                placeholder="Origin, quality grade, storage notes…"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
+            <LangField
+              id="p-desc"
+              label={t('addProduct.description')}
+              placeholder="Origin, quality grade, storage notes…"
+              multiline
+              values={{ ru: description, uzCyrl: descriptionUzCyrl, uzLatn: descriptionUzLatn, en: descriptionEn }}
+              onChange={(lang, value) => {
+                if (lang === 'ru') setDescription(value)
+                else if (lang === 'uzCyrl') setDescriptionUzCyrl(value)
+                else if (lang === 'uzLatn') setDescriptionUzLatn(value)
+                else setDescriptionEn(value)
+              }}
+            />
 
             <div className="field-row">
               <div className="field">
@@ -337,9 +362,10 @@ export default function AddProduct() {
               <div className="field">
                 <label>Цены по остальным единицам — {unit(selectedUnits[0])} использует цену выше</label>
                 {extraUnits.map((u) => (
-                  <div key={u} className="field-row" style={{ alignItems: 'flex-end' }}>
-                    <div className="field" style={{ flex: '0 0 88px' }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{unit(u)}</span>
+                  <div key={u} className="unit-price-row">
+                    <div className="field unit-price-tag-field">
+                      <label>{t('common.unit')}</label>
+                      <div className="unit-price-tag">{unit(u)}</div>
                     </div>
                     <div className="field">
                       <label htmlFor={`up-price-${u}`}>{t('common.price')}</label>

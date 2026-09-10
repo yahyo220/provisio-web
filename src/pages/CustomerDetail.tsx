@@ -49,6 +49,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const [approving, setApproving] = useState(false)
   const [bankTransferEnabled, setBankTransferEnabled] = useState(customer.bankTransferEnabled)
   const [bankTransferBusy, setBankTransferBusy] = useState(false)
+  const [cashEnabled, setCashEnabled] = useState(customer.cashEnabled)
+  const [cashBusy, setCashBusy] = useState(false)
 
   const customerOrders = orders.filter((o) => o.customerId === customer.id)
 
@@ -75,6 +77,16 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
       await updateCustomer(customer.id, { bankTransferEnabled: next })
     } finally {
       setBankTransferBusy(false)
+    }
+  }
+
+  async function handleCashToggle(next: boolean) {
+    setCashBusy(true)
+    setCashEnabled(next)
+    try {
+      await updateCustomer(customer.id, { cashEnabled: next })
+    } finally {
+      setCashBusy(false)
     }
   }
 
@@ -233,6 +245,25 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
                   onChange={handleBankTransferToggle}
                   label="Оплата «Перечисление»"
                   disabled={bankTransferBusy}
+                />
+              </div>
+
+              <div className="status-row" style={{ marginTop: 16 }}>
+                <div>
+                  <div className="lbl">Оплата наличными курьеру</div>
+                  <div className="sub">
+                    {customer.cashRequested && !cashEnabled
+                      ? 'Клиент запросил доступ в приложении.'
+                      : cashEnabled
+                        ? 'Может выбрать этот способ оплаты при заказе.'
+                        : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
+                  </div>
+                </div>
+                <Switch
+                  checked={cashEnabled}
+                  onChange={handleCashToggle}
+                  label="Оплата наличными курьеру"
+                  disabled={cashBusy}
                 />
               </div>
             </Card>

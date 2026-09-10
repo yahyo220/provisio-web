@@ -46,6 +46,12 @@ export interface NewProductInput {
   units?: string[]
   unitPrices?: { unit: string; price: number; priceExternal?: number | null }[]
   description?: string
+  nameUzCyrl?: string
+  nameUzLatn?: string
+  nameEn?: string
+  descriptionUzCyrl?: string
+  descriptionUzLatn?: string
+  descriptionEn?: string
   stock: StockStatus
   active: boolean
   imageUrl?: string
@@ -180,6 +186,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
               unitPrices: [],
               variantGroupId: null,
               description: input.description ?? '',
+              nameUzCyrl: input.nameUzCyrl ?? '',
+              nameUzLatn: input.nameUzLatn ?? '',
+              nameEn: input.nameEn ?? '',
+              descriptionUzCyrl: input.descriptionUzCyrl ?? '',
+              descriptionUzLatn: input.descriptionUzLatn ?? '',
+              descriptionEn: input.descriptionEn ?? '',
               stock: input.stock,
               active: input.active,
               updated: 'Just now',
@@ -250,6 +262,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
               staffRole: '',
               bankTransferEnabled: false,
               bankTransferRequested: false,
+              cashEnabled: false,
+              cashRequested: false,
               createdAt: new Date().toISOString(),
             },
             ...prev,

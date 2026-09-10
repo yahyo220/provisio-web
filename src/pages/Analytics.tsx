@@ -5,27 +5,32 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import { useLanguage } from '../i18n/LanguageContext'
 import {
-  analyticsKpisByRange,
-  categoryBreakdownByRange,
-  paymentBreakdown,
-  productPerformanceByRange,
-  revenueByRange,
-  topCustomersBySpend,
-} from '../lib/data'
-import type { RevenueRange } from '../lib/data'
+  computeAnalyticsKpis,
+  computeCategoryBreakdown,
+  computePaymentBreakdown,
+  computeProductPerformance,
+  computeRevenueChart,
+  computeTopCustomersBySpend,
+} from '../lib/stats'
+import type { RevenueRange } from '../lib/stats'
 import { useData } from '../store/DataContext'
 
 const RANGES: RevenueRange[] = ['1W', '1M', '3M', '1Y']
 
 export default function Analytics() {
-  const { customers } = useData()
+  const { orders, orderItems, products } = useData()
   const { t, label, ref: refText, category } = useLanguage()
   const [range, setRange] = useState<RevenueRange>('1M')
 
-  const chart = revenueByRange[range]
-  const kpis = analyticsKpisByRange[range]
-  const categories = categoryBreakdownByRange[range]
-  const productPerformance = productPerformanceByRange[range]
+  const chart = useMemo(() => computeRevenueChart(orders, range), [orders, range])
+  const kpis = useMemo(() => computeAnalyticsKpis(orders, range), [orders, range])
+  const categories = useMemo(() => computeCategoryBreakdown(orders, orderItems, products, range), [orders, orderItems, products, range])
+  const paymentBreakdown = useMemo(() => computePaymentBreakdown(orders, range), [orders, range])
+  const productPerformance = useMemo(
+    () => computeProductPerformance(orders, orderItems, products, range),
+    [orders, orderItems, products, range],
+  )
+  const topCustomersBySpend = useMemo(() => computeTopCustomersBySpend(orders, range), [orders, range])
   const periodLabel = t(`period.${chart.periodKey}`)
 
   const chartTop = useMemo(() => {
@@ -214,27 +219,15 @@ export default function Analytics() {
           <p className="section-label">{t('analytics.topCustomers')}</p>
           <div className="products-row">
             {topCustomersBySpend.length === 0 && <div className="empty-state">{t('common.noData')}</div>}
-            {topCustomersBySpend.map((customer) => {
-              const match = customers.find((c) => c.name === customer.name)
-              const content = (
-                <>
-                  <div>
-                    <div className="p-name">{customer.name}</div>
-                    <div className="p-meta">{customer.meta}</div>
-                  </div>
-                  <div className="p-units">{customer.value}</div>
-                </>
-              )
-              return match ? (
-                <Link className="product-item" to={`/customers/${match.id}`} key={customer.name}>
-                  {content}
-                </Link>
-              ) : (
-                <div className="product-item" key={customer.name}>
-                  {content}
+            {topCustomersBySpend.map((customer) => (
+              <Link className="product-item" to={`/customers/${customer.id}`} key={customer.id}>
+                <div>
+                  <div className="p-name">{customer.name}</div>
+                  <div className="p-meta">{customer.meta}</div>
                 </div>
-              )
-            })}
+                <div className="p-units">{customer.value}</div>
+              </Link>
+            ))}
           </div>
         </Card>
       </section>

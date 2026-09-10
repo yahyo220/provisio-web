@@ -7,7 +7,7 @@
 // nothing here was ever wired to the live data at all.
 import type { RevenueRange } from './data'
 import { formatMoney } from './format'
-import type { CustomerRow, DeliveryRow, OrderItemRow, OrderRow, OrderStatus, ProductRow } from './types'
+import type { CustomerRow, DeliveryRow, OrderItemRow, OrderRow, OrderStatus, PaymentStatus, ProductRow } from './types'
 
 export type { RevenueRange }
 
@@ -275,4 +275,172 @@ export function computeCustomerKpis(customers: CustomerRow[], orders: OrderRow[]
     { label: 'Active accounts', value: `${active}`, delta: '', ref: 'vs last month', direction: 'up' },
     { label: 'Avg. order value', value: formatMoney(Math.round(avgOrderValue)), delta: '', ref: 'vs last month', direction: 'up' },
   ]
+}
+
+// ---------------------------------------------------------------------------
+// Analytics page — everything below computes over a whole selected
+// RevenueRange rather than "today vs yesterday" (Dashboard's KPIs), so its
+// delta always compares the range against the immediately preceding
+// equal-length period (this week vs the week before, this quarter vs the
+// quarter before, etc.) — this used to be a permanently-empty stub (see this
+// file's top comment) wired to nothing.
+// ---------------------------------------------------------------------------
+
+/** Which existing ref-text key (see i18n/translations.ts's REF_KEYS) reads
+ * naturally for each range's "vs previous period" comparison. */
+const RANGE_REF: Record<RevenueRange, string> = {
+  '1W': 'vs last week',
+  '1M': 'vs last month',
+  '3M': 'vs last quarter',
+  '1Y': 'vs last year',
+}
+
+function rangeWindows(range: RevenueRange, from = new Date()) {
+  const days = RANGE_DAYS[range]
+  return { currentStart: daysAgo(days - 1, from), previousStart: daysAgo(days * 2 - 1, from), previousEnd: daysAgo(days - 1, from) }
+}
+
+export interface AnalyticsKpi {
+  label: string
+  value: string
+  delta: string
+  ref: string
+  direction: 'up' | 'down'
+}
+
+export function computeAnalyticsKpis(orders: OrderRow[], range: RevenueRange): AnalyticsKpi[] {
+  const { currentStart, previousStart, previousEnd } = rangeWindows(range)
+  const ref = RANGE_REF[range]
+
+  const current = orders.filter((o) => o.status !== 'cancelled' && new Date(o.createdAt) >= currentStart)
+  const previous = orders.filter((o) => {
+    if (o.status === 'cancelled') return false
+    const created = new Date(o.createdAt)
+    return created >= previousStart && created < previousEnd
+  })
+
+  const revenue = current.reduce((sum, o) => sum + o.totalRaw, 0)
+  const revenuePrev = previous.reduce((sum, o) => sum + o.totalRaw, 0)
+  const avgOrder = current.length > 0 ? revenue / current.length : 0
+  const avgOrderPrev = previous.length > 0 ? revenuePrev / previous.length : 0
+  const repeatRate = (list: OrderRow[]) => {
+    const byCustomer = new Map<string, number>()
+    for (const o of list) {
+      if (!o.customerId) continue
+      byCustomer.set(o.customerId, (byCustomer.get(o.customerId) ?? 0) + 1)
+    }
+    if (byCustomer.size === 0) return 0
+    const repeaters = Array.from(byCustomer.values()).filter((n) => n > 1).length
+    return Math.round((repeaters / byCustomer.size) * 100)
+  }
+  const repeat = repeatRate(current)
+  const repeatPrev = repeatRate(previous)
+
+  const revDelta = pctDelta(revenue, revenuePrev)
+  const ordDelta = pctDelta(current.length, previous.length)
+  const avgDelta = pctDelta(avgOrder, avgOrderPrev)
+  const repeatDelta = pctDelta(repeat, repeatPrev)
+
+  return [
+    { label: 'Total revenue', value: formatMoney(revenue), delta: revDelta.delta, ref, direction: revDelta.direction },
+    { label: 'Total orders', value: `${current.length}`, delta: ordDelta.delta, ref, direction: ordDelta.direction },
+    { label: 'Avg. order value', value: formatMoney(Math.round(avgOrder)), delta: avgDelta.delta, ref, direction: avgDelta.direction },
+    { label: 'Repeat customer rate', value: `${repeat}%`, delta: repeatDelta.delta, ref, direction: repeatDelta.direction },
+  ]
+}
+
+const PAYMENT_STATUS_ORDER: PaymentStatus[] = ['paid', 'pending', 'overdue']
+
+export function computePaymentBreakdown(orders: OrderRow[], range: RevenueRange): { name: string; pct: number }[] {
+  const rangeStart = daysAgo(RANGE_DAYS[range] - 1)
+  const inRange = orders.filter((o) => o.status !== 'cancelled' && new Date(o.createdAt) >= rangeStart)
+  if (inRange.length === 0) return []
+
+  const counts = new Map<PaymentStatus, number>()
+  for (const o of inRange) counts.set(o.payment, (counts.get(o.payment) ?? 0) + 1)
+
+  return PAYMENT_STATUS_ORDER.filter((status) => counts.has(status)).map((status) => ({
+    name: status,
+    pct: Math.round(((counts.get(status) ?? 0) / inRange.length) * 100),
+  }))
+}
+
+export interface ProductPerformance {
+  name: string
+  unitsSold: string
+  revenue: string
+  growth: string
+  direction: 'up' | 'down'
+}
+
+export function computeProductPerformance(
+  orders: OrderRow[],
+  orderItems: OrderItemRow[],
+  products: ProductRow[],
+  range: RevenueRange,
+  limit = 8,
+): ProductPerformance[] {
+  const { currentStart, previousStart, previousEnd } = rangeWindows(range)
+  const orderById = new Map(orders.map((o) => [o.id, o]))
+
+  const currentQty = new Map<string, number>()
+  const currentRevenue = new Map<string, number>()
+  const previousQty = new Map<string, number>()
+
+  for (const item of orderItems) {
+    if (!item.productId) continue
+    const order = orderById.get(item.orderId)
+    if (!order || order.status === 'cancelled') continue
+    const created = new Date(order.createdAt)
+    const revenue = item.qty * item.unitPrice
+    if (created >= currentStart) {
+      currentQty.set(item.productId, (currentQty.get(item.productId) ?? 0) + item.qty)
+      currentRevenue.set(item.productId, (currentRevenue.get(item.productId) ?? 0) + revenue)
+    } else if (created >= previousStart && created < previousEnd) {
+      previousQty.set(item.productId, (previousQty.get(item.productId) ?? 0) + item.qty)
+    }
+  }
+
+  const productById = new Map(products.map((p) => [p.id, p]))
+  return Array.from(currentRevenue.entries())
+    .filter(([id]) => productById.has(id))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([id, revenue]) => {
+      const qty = currentQty.get(id) ?? 0
+      const growth = pctDelta(qty, previousQty.get(id) ?? 0)
+      return {
+        name: productById.get(id)!.name,
+        unitsSold: `${qty}`,
+        revenue: formatMoney(revenue),
+        growth: growth.delta,
+        direction: growth.direction,
+      }
+    })
+}
+
+export interface TopCustomerSpend {
+  id: string
+  name: string
+  meta: string
+  value: string
+}
+
+export function computeTopCustomersBySpend(orders: OrderRow[], range: RevenueRange, limit = 6): TopCustomerSpend[] {
+  const rangeStart = daysAgo(RANGE_DAYS[range] - 1)
+  const byCustomer = new Map<string, { name: string; spend: number; count: number }>()
+
+  for (const o of orders) {
+    if (o.status === 'cancelled' || !o.customerId) continue
+    if (new Date(o.createdAt) < rangeStart) continue
+    const entry = byCustomer.get(o.customerId) ?? { name: o.customer, spend: 0, count: 0 }
+    entry.spend += o.totalRaw
+    entry.count += 1
+    byCustomer.set(o.customerId, entry)
+  }
+
+  return Array.from(byCustomer.entries())
+    .sort((a, b) => b[1].spend - a[1].spend)
+    .slice(0, limit)
+    .map(([id, c]) => ({ id, name: c.name, meta: `${c.count} заказов`, value: formatMoney(c.spend) }))
 }

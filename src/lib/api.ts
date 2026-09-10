@@ -69,6 +69,12 @@ export async function fetchAll(): Promise<FetchedData> {
       : [],
     variantGroupId: row.variant_group_id ?? null,
     description: row.description || '',
+    nameUzCyrl: row.name_uz_cyrl || '',
+    nameUzLatn: row.name_uz_latn || '',
+    nameEn: row.name_en || '',
+    descriptionUzCyrl: row.description_uz_cyrl || '',
+    descriptionUzLatn: row.description_uz_latn || '',
+    descriptionEn: row.description_en || '',
     stock: row.stock as StockStatus,
     active: row.active,
     updated: formatRelative(row.updated_at),
@@ -125,6 +131,8 @@ export async function fetchAll(): Promise<FetchedData> {
     staffRole: row.staff_role || '',
     bankTransferEnabled: Boolean(row.bank_transfer_enabled),
     bankTransferRequested: Boolean(row.bank_transfer_requested),
+    cashEnabled: Boolean(row.cash_enabled),
+    cashRequested: Boolean(row.cash_requested),
     hasLogin: Boolean(row.auth_user_id),
     createdAt: row.created_at,
   }))
@@ -178,6 +186,12 @@ export async function insertProduct(product: {
   units?: string[]
   unitPrices?: { unit: string; price: number; priceExternal?: number | null }[]
   description?: string
+  nameUzCyrl?: string
+  nameUzLatn?: string
+  nameEn?: string
+  descriptionUzCyrl?: string
+  descriptionUzLatn?: string
+  descriptionEn?: string
   stock: StockStatus
   active: boolean
   imageUrl?: string
@@ -197,6 +211,12 @@ export async function insertProduct(product: {
       price_external: u.priceExternal ?? null,
     })),
     description: product.description?.trim() || null,
+    name_uz_cyrl: product.nameUzCyrl?.trim() || null,
+    name_uz_latn: product.nameUzLatn?.trim() || null,
+    name_en: product.nameEn?.trim() || null,
+    description_uz_cyrl: product.descriptionUzCyrl?.trim() || null,
+    description_uz_latn: product.descriptionUzLatn?.trim() || null,
+    description_en: product.descriptionEn?.trim() || null,
     stock: product.stock,
     active: product.active,
     image_url: product.imageUrl ?? null,
@@ -225,6 +245,12 @@ export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
   }
   if (patch.variantGroupId !== undefined) dbPatch.variant_group_id = patch.variantGroupId
   if (patch.description !== undefined) dbPatch.description = patch.description.trim() || null
+  if (patch.nameUzCyrl !== undefined) dbPatch.name_uz_cyrl = patch.nameUzCyrl.trim() || null
+  if (patch.nameUzLatn !== undefined) dbPatch.name_uz_latn = patch.nameUzLatn.trim() || null
+  if (patch.nameEn !== undefined) dbPatch.name_en = patch.nameEn.trim() || null
+  if (patch.descriptionUzCyrl !== undefined) dbPatch.description_uz_cyrl = patch.descriptionUzCyrl.trim() || null
+  if (patch.descriptionUzLatn !== undefined) dbPatch.description_uz_latn = patch.descriptionUzLatn.trim() || null
+  if (patch.descriptionEn !== undefined) dbPatch.description_en = patch.descriptionEn.trim() || null
   if (patch.stock !== undefined) dbPatch.stock = patch.stock
   if (patch.active !== undefined) dbPatch.active = patch.active
   // Empty string (photo removed, falls back to the placeholder at display
@@ -288,6 +314,10 @@ export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>)
     // Granting (or explicitly revoking) always clears the pending ask —
     // there's nothing left to act on either way.
     dbPatch.bank_transfer_requested = false
+  }
+  if (patch.cashEnabled !== undefined) {
+    dbPatch.cash_enabled = patch.cashEnabled
+    dbPatch.cash_requested = false
   }
   const { error } = await db.from('customers').update(dbPatch).eq('id', id)
   if (error) throw error
@@ -414,48 +444,65 @@ export async function fetchOrderFeedback(orderId: string): Promise<OrderFeedback
 
 export interface SupportMessageRow {
   id: string
-  customerId: string
-  sender: 'customer' | 'admin'
+  ownerId: string
+  ownerType: 'customer' | 'driver'
+  sender: 'customer' | 'driver' | 'admin'
   message: string
   createdAt: string
 }
 
-export async function fetchSupportThreads(): Promise<{ customerId: string; lastMessage: string; lastAt: string; unread: boolean }[]> {
-  const db = assertClient()
-  const { data, error } = await db.from('support_messages').select('customer_id, sender, message, created_at').order('created_at', { ascending: true })
-  if (error) throw error
-  const byCustomer = new Map<string, { lastMessage: string; lastAt: string; unread: boolean }>()
-  for (const row of data ?? []) {
-    byCustomer.set(row.customer_id, {
-      lastMessage: row.message,
-      lastAt: row.created_at,
-      unread: row.sender === 'customer',
-    })
-  }
-  return Array.from(byCustomer.entries())
-    .map(([customerId, v]) => ({ customerId, ...v }))
-    .sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1))
+export interface SupportThread {
+  ownerId: string
+  ownerType: 'customer' | 'driver'
+  lastMessage: string
+  lastAt: string
+  unread: boolean
 }
 
-export async function fetchSupportMessages(customerId: string): Promise<SupportMessageRow[]> {
+export async function fetchSupportThreads(): Promise<SupportThread[]> {
   const db = assertClient()
   const { data, error } = await db
     .from('support_messages')
-    .select('id, customer_id, sender, message, created_at')
-    .eq('customer_id', customerId)
+    .select('customer_id, driver_id, sender, message, created_at')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  const byOwner = new Map<string, SupportThread>()
+  for (const row of data ?? []) {
+    const ownerType: 'customer' | 'driver' = row.driver_id ? 'driver' : 'customer'
+    const ownerId = (row.driver_id ?? row.customer_id) as string
+    byOwner.set(`${ownerType}:${ownerId}`, {
+      ownerId,
+      ownerType,
+      lastMessage: row.message,
+      lastAt: row.created_at,
+      unread: row.sender !== 'admin',
+    })
+  }
+  return Array.from(byOwner.values()).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1))
+}
+
+export async function fetchSupportMessages(ownerId: string, ownerType: 'customer' | 'driver'): Promise<SupportMessageRow[]> {
+  const db = assertClient()
+  const column = ownerType === 'driver' ? 'driver_id' : 'customer_id'
+  const { data, error } = await db
+    .from('support_messages')
+    .select('id, customer_id, driver_id, sender, message, created_at')
+    .eq(column, ownerId)
     .order('created_at', { ascending: true })
   if (error) throw error
   return (data ?? []).map((row) => ({
     id: row.id,
-    customerId: row.customer_id,
-    sender: row.sender as 'customer' | 'admin',
+    ownerId: (row.driver_id ?? row.customer_id) as string,
+    ownerType: row.driver_id ? 'driver' : 'customer',
+    sender: row.sender as 'customer' | 'driver' | 'admin',
     message: row.message,
     createdAt: row.created_at,
   }))
 }
 
-export async function sendSupportMessage(customerId: string, message: string) {
+export async function sendSupportMessage(ownerId: string, ownerType: 'customer' | 'driver', message: string) {
   const db = assertClient()
-  const { error } = await db.from('support_messages').insert({ customer_id: customerId, sender: 'admin', message })
+  const column = ownerType === 'driver' ? 'driver_id' : 'customer_id'
+  const { error } = await db.from('support_messages').insert({ [column]: ownerId, sender: 'admin', message })
   if (error) throw error
 }

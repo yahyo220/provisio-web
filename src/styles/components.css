@@ -362,6 +362,65 @@
   color: var(--gesso-fg);
 }
 
+/* Wraps a .field's <label> when it also carries a corner control (the
+   per-language switcher on Name/Description — see LangField.tsx) so the
+   label and the control sit on one baseline instead of the control
+   pushing the label out of its normal flow. */
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lang-field-switch {
+  display: flex;
+  gap: 2px;
+  background: var(--gesso-surface-recessed);
+  border-radius: var(--gesso-radius-sm, 6px);
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.lang-tab {
+  border: none;
+  background: none;
+  font-family: var(--gesso-font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--gesso-fg-muted);
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.lang-tab:hover {
+  color: var(--gesso-fg);
+}
+
+.lang-tab.active {
+  background: var(--gesso-surface);
+  color: var(--gesso-accent, #1e5c3e);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* A small dot marks a language tab that already has text — lets the admin
+   see at a glance which translations exist without clicking through each
+   tab. */
+.lang-tab.filled::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gesso-accent, #1e5c3e);
+}
+
 .field input,
 .field select,
 .field textarea {
@@ -406,6 +465,50 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 16px;
+}
+
+/* One row of a secondary unit's price fields on Add/Edit Product — a fixed
+   3-column grid (unit tag, price, external price) instead of .field-row's
+   auto-fit, which would size this row's narrow unit tag the same as its
+   wide price siblings and reflow unpredictably as rows stack. */
+.unit-price-row {
+  display: grid;
+  grid-template-columns: 96px 1fr 1fr;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.unit-price-row:last-child {
+  margin-bottom: 0;
+}
+
+/* Reset .field's own spacing rules inside a unit-price-row — the row's own
+   gap/margin above handles it, so the fields here don't also need their own
+   bottom margin (which would otherwise unevenly stretch some columns
+   taller than others within the same row). */
+.unit-price-row .field {
+  margin-bottom: 0;
+}
+
+@media (max-width: 480px) {
+  .unit-price-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .unit-price-row .unit-price-tag-field {
+    grid-column: 1 / -1;
+  }
+}
+
+.unit-price-tag {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gesso-fg);
+  background: var(--gesso-surface-recessed);
+  border-radius: var(--gesso-radius-md);
+  padding: 12px 16px;
 }
 
 .select-wrap {

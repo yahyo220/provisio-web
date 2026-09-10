@@ -65,6 +65,16 @@ export interface ProductRow {
   unitPrices: UnitPriceRow[]
   /** Short trade-copy blurb shown on the app's product detail screen. Empty = the app falls back to its own generic templated description. */
   description: string
+  /** Per-language overrides for `name` — null/empty falls back to the Russian
+   * `name` above (see migration 0026_product_name_translations.sql). Edited
+   * via the language-switch button next to the Product Name field. */
+  nameUzCyrl: string
+  nameUzLatn: string
+  nameEn: string
+  /** Same idea, for `description` (migration 0032_product_description_translations.sql). */
+  descriptionUzCyrl: string
+  descriptionUzLatn: string
+  descriptionEn: string
   /** Other products that are really "this same product, different variety"
    * (e.g. three tomato types) — admin-linked, not automatic. Null/shared
    * with no one = no variant picker shown in the app. */
@@ -107,6 +117,12 @@ export interface CustomerRow {
    * default; a customer requests it in the app, an admin grants it here. */
   bankTransferEnabled: boolean
   bankTransferRequested: boolean
+  /** "Наличными курьеру" (cash on delivery) as a checkout payment method —
+   * same request/grant gate as bank transfer above. Cards aren't accepted at
+   * all, so a customer can't place any order until an admin grants at least
+   * one of these two. */
+  cashEnabled: boolean
+  cashRequested: boolean
   /** Raw ISO timestamp — for stats math (see lib/stats.ts), same idea as OrderRow.createdAt. */
   createdAt: string
 }

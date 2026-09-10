@@ -176,14 +176,14 @@ Deno.serve(async (req) => {
       }
     } else if (table === 'support_messages' && type === 'INSERT') {
       if (record.sender === 'admin') {
-        const { data: customer } = await admin
-          .from('customers')
-          .select('fcm_tokens')
-          .eq('id', record.customer_id as string)
-          .maybeSingle()
+        // Either customer_id or driver_id is set, never both — see
+        // 0034_courier_support_chat.sql's support_messages_one_owner check.
+        const ownerTable = record.driver_id ? 'drivers' : 'customers'
+        const ownerId = (record.driver_id ?? record.customer_id) as string
+        const { data: owner } = await admin.from(ownerTable).select('fcm_tokens').eq('id', ownerId).maybeSingle()
         const text = String(record.message ?? '')
         await sendPushToAll(
-          customer?.fcm_tokens,
+          owner?.fcm_tokens,
           'Новое сообщение от поддержки',
           text.length > 120 ? `${text.slice(0, 117)}...` : text,
           { type: 'support_message' },

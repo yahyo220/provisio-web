@@ -132,35 +132,6 @@ export const kpis = [
 
 export type RevenueRange = '1W' | '1M' | '3M' | '1Y'
 
-export const categoryBreakdownByRange: Record<RevenueRange, { name: string; pct: number }[]> = {
-  '1W': [],
-  '1M': [],
-  '3M': [],
-  '1Y': [],
-}
-
-const EMPTY_CHART = { stat: '0 сум', points: '0,219 640,219', axis: ['', '', '', '', '', '', '', ''] }
-
-export const revenueByRange: Record<
-  RevenueRange,
-  { stat: string; periodKey: string; points: string; axis: string[] }
-> = {
-  '1W': { ...EMPTY_CHART, periodKey: 'last7days' },
-  '1M': { ...EMPTY_CHART, periodKey: 'last30days' },
-  '3M': { ...EMPTY_CHART, periodKey: 'last3months' },
-  '1Y': { ...EMPTY_CHART, periodKey: 'last12months' },
-}
-
-export const topProductsByRange: Record<
-  RevenueRange,
-  { id: string; name: string; category: string; price: string; unit: string; units: string; image: string }[]
-> = {
-  '1W': [],
-  '1M': [],
-  '3M': [],
-  '1Y': [],
-}
-
 /** Single source of truth for every order — Dashboard "Recent orders" is just the newest N of this list. */
 export const orders: OrderRow[] = []
 
@@ -210,38 +181,3 @@ export const deliveryKpis = [
 export const drivers: string[] = []
 
 export const deliveries: DeliveryRow[] = []
-
-/* ---------------------------------- Analytics ---------------------------------- */
-
-const EMPTY_ANALYTICS_KPIS = [
-  { label: 'Total revenue', value: '0 сум', delta: '0%', ref: 'vs last month', direction: 'up' as const },
-  { label: 'Total orders', value: '0', delta: '0%', ref: 'vs last month', direction: 'up' as const },
-  { label: 'Avg. order value', value: '0 сум', delta: '0%', ref: 'vs last month', direction: 'up' as const },
-  { label: 'Repeat customer rate', value: '0%', delta: '0%', ref: 'vs last month', direction: 'up' as const },
-]
-
-export const analyticsKpisByRange: Record<RevenueRange, typeof EMPTY_ANALYTICS_KPIS> = {
-  '1W': EMPTY_ANALYTICS_KPIS,
-  '1M': EMPTY_ANALYTICS_KPIS,
-  '3M': EMPTY_ANALYTICS_KPIS,
-  '1Y': EMPTY_ANALYTICS_KPIS,
-}
-
-export const paymentBreakdown: { name: string; pct: number }[] = []
-
-export const topCustomersBySpend: { name: string; meta: string; value: string }[] = []
-
-const EMPTY_PRODUCT_PERFORMANCE: {
-  name: string
-  unitsSold: string
-  revenue: string
-  growth: string
-  direction: 'up' | 'down'
-}[] = []
-
-export const productPerformanceByRange: Record<RevenueRange, typeof EMPTY_PRODUCT_PERFORMANCE> = {
-  '1W': EMPTY_PRODUCT_PERFORMANCE,
-  '1M': EMPTY_PRODUCT_PERFORMANCE,
-  '3M': EMPTY_PRODUCT_PERFORMANCE,
-  '1Y': EMPTY_PRODUCT_PERFORMANCE,
-}
