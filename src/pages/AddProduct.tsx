@@ -112,6 +112,7 @@ export default function AddProduct() {
         price: Number(unitPrices[u]?.price || 0),
         priceExternal: unitPrices[u]?.priceExternal?.trim() ? Number(unitPrices[u]!.priceExternal) : null,
       })),
+      description,
       stock,
       active,
       imageUrl,

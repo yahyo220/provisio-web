@@ -45,6 +45,7 @@ export interface NewProductInput {
   unit: string
   units?: string[]
   unitPrices?: { unit: string; price: number; priceExternal?: number | null }[]
+  description?: string
   stock: StockStatus
   active: boolean
   imageUrl?: string
@@ -178,6 +179,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               units: input.units ?? [],
               unitPrices: [],
               variantGroupId: null,
+              description: input.description ?? '',
               stock: input.stock,
               active: input.active,
               updated: 'Just now',

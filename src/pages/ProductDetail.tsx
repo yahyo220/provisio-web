@@ -40,6 +40,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   const { t, category, unit } = useLanguage()
 
   const [name, setName] = useState(product.name)
+  const [description, setDescription] = useState(product.description)
   const [productCategory, setProductCategory] = useState(product.category)
   const [price, setPrice] = useState(product.price.replace(/[^\d.]/g, ''))
   const [priceExternal, setPriceExternal] = useState(product.priceExternal.replace(/[^\d.]/g, ''))
@@ -112,6 +113,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
     }
     updateProduct(product.id, {
       name,
+      description,
       category: productCategory,
       price: String(Number(price || 0)),
       priceExternal,
@@ -284,6 +286,16 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
             <div className="field">
               <label htmlFor="pd-name">{t('productDetail.productName')}</label>
               <input id="pd-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+
+            <div className="field">
+              <label htmlFor="pd-desc">{t('addProduct.description')}</label>
+              <textarea
+                id="pd-desc"
+                placeholder="Origin, quality grade, storage notes…"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
             </div>
 
             <div className="field-row">

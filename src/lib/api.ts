@@ -68,6 +68,7 @@ export async function fetchAll(): Promise<FetchedData> {
         }))
       : [],
     variantGroupId: row.variant_group_id ?? null,
+    description: row.description || '',
     stock: row.stock as StockStatus,
     active: row.active,
     updated: formatRelative(row.updated_at),
@@ -176,6 +177,7 @@ export async function insertProduct(product: {
   unit: string
   units?: string[]
   unitPrices?: { unit: string; price: number; priceExternal?: number | null }[]
+  description?: string
   stock: StockStatus
   active: boolean
   imageUrl?: string
@@ -194,6 +196,7 @@ export async function insertProduct(product: {
       price: u.price,
       price_external: u.priceExternal ?? null,
     })),
+    description: product.description?.trim() || null,
     stock: product.stock,
     active: product.active,
     image_url: product.imageUrl ?? null,
@@ -221,6 +224,7 @@ export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
     }))
   }
   if (patch.variantGroupId !== undefined) dbPatch.variant_group_id = patch.variantGroupId
+  if (patch.description !== undefined) dbPatch.description = patch.description.trim() || null
   if (patch.stock !== undefined) dbPatch.stock = patch.stock
   if (patch.active !== undefined) dbPatch.active = patch.active
   // Empty string (photo removed, falls back to the placeholder at display

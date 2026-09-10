@@ -63,6 +63,8 @@ export interface ProductRow {
   units: string[]
   /** Price override for units[1:] — units[0] always uses price/priceExternal above. */
   unitPrices: UnitPriceRow[]
+  /** Short trade-copy blurb shown on the app's product detail screen. Empty = the app falls back to its own generic templated description. */
+  description: string
   /** Other products that are really "this same product, different variety"
    * (e.g. three tomato types) — admin-linked, not automatic. Null/shared
    * with no one = no variant picker shown in the app. */
