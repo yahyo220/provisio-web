@@ -129,6 +129,7 @@ export async function fetchAll(): Promise<FetchedData> {
     approvalStatus: (row.approval_status ?? 'approved') as ApprovalStatus,
     priceTier: (row.price_tier ?? 'no_price') as PriceTier,
     staffRole: row.staff_role || '',
+    companyName: row.company_name || '',
     bankTransferEnabled: Boolean(row.bank_transfer_enabled),
     bankTransferRequested: Boolean(row.bank_transfer_requested),
     cashEnabled: Boolean(row.cash_enabled),

@@ -113,6 +113,9 @@ export interface CustomerRow {
   /** Role of the person who registered (e.g. "бармен", "повар") — informational,
    * since one account is often shared by several staff placing orders. */
   staffRole: string
+  /** Business name typed at registration (e.g. a cafe/restaurant name) — separate
+   * from `name`, which is the account/contact display name. Used on накладная exports. */
+  companyName: string
   /** "Перечисление" (bank transfer) as a checkout payment method — off by
    * default; a customer requests it in the app, an admin grants it here. */
   bankTransferEnabled: boolean

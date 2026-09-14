@@ -1,14 +1,12 @@
-// Freshline — order → Excel export, replacing the (previously non-functional)
-// "Download PDF" button on the order detail page. The layout mirrors a
-// waybill template the business already uses elsewhere ("Номер накладной /
-// Организация / Дата заявки / Контрагент" + a №/Название/Кол-во/Сумма
-// table), just filled in with this order's real data instead of merge
-// placeholders, so the exported file drops straight into whatever process
-// already expects that shape.
+// Freshline — order → Excel export, matching the business's own накладная
+// merge-template exactly (Номер накладной / Организация (нашa) / Организация
+// (клиента) / Дата заявки / Должность / Контрагент / Телефон, then a
+// №-Название-Категория-Ед.изм.-Кол-во table — deliberately no price/sum
+// column, this template never had one).
 import ExcelJS from 'exceljs'
 import type { CustomerRow, OrderRow } from './types'
 import type { OrderLineItem } from './data'
-import { THIN_BORDER, triggerXlsxDownload } from './xlsxShared'
+import { MEDIUM_BORDER, triggerXlsxDownload } from './xlsxShared'
 
 export async function downloadOrderExcel(
   order: OrderRow,
@@ -18,72 +16,69 @@ export async function downloadOrderExcel(
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Накладная')
 
-  ws.columns = [
-    { width: 7.14 },
-    { width: 34.29 },
-    { width: 18.14 },
-    { width: 12 },
-    { width: 11.43 },
-    { width: 10 },
-    { width: 10 },
-  ]
-
-  const addLabelRow = (rowIndex: number, text: string, span: number, bold: boolean) => {
-    ws.mergeCells(rowIndex, 1, rowIndex, span)
-    const cell = ws.getCell(rowIndex, 1)
-    cell.value = text
-    cell.font = { bold, size: 11 }
-    cell.alignment = { horizontal: 'left' }
-  }
+  ws.columns = [{ width: 7.14 }, { width: 34.29 }, { width: 18.14 }, {}, { width: 11.43 }]
 
   const orderDate = new Date(order.createdAt)
   const dateLabel = Number.isNaN(orderDate.getTime())
     ? order.date
     : orderDate.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
-  addLabelRow(1, `Номер накладной: ${order.orderNumber}`, 2, false)
-  addLabelRow(2, `Организация: ${customer?.name ?? order.customer}`, 5, true)
-  addLabelRow(3, `Дата заявки: ${dateLabel}`, 2, true)
-  addLabelRow(4, `Контрагент: ${customer?.contact || customer?.name || order.customer}`, 5, true)
+  const addLabelRow = (rowIndex: number, text: string, bold: boolean) => {
+    ws.mergeCells(rowIndex, 1, rowIndex, 2)
+    const cell = ws.getCell(rowIndex, 1)
+    cell.value = text
+    cell.font = { name: 'Calibri', size: 11, bold }
+    cell.alignment = { horizontal: 'left', vertical: bold ? 'top' : undefined }
+  }
 
-  const headerRow = 5
-  ws.mergeCells(headerRow, 6, headerRow, 7) // F:G — "Сумма"
+  // Rows 1-2: our own info, regular weight. Rows 3-6: the client's own
+  // info, bold — same distinction the source template makes.
+  addLabelRow(1, `Номер накладной: ${order.orderNumber}`, false)
+  addLabelRow(2, `Организация: Freshline`, false)
+  addLabelRow(3, `Организация: ${customer?.companyName || '—'}`, true)
+  addLabelRow(4, `Дата заявки: ${dateLabel}`, true)
+  addLabelRow(5, `Должность: ${customer?.staffRole || '—'}`, true)
+  addLabelRow(6, `Контрагент: ${customer?.contact || customer?.name || order.customer}`, true)
+  addLabelRow(7, `Телефон: ${customer?.phone || '—'}`, true)
+
+  // Header row — only №/Название/Кол-во are labeled in the source template;
+  // the Категория/Ед. изм. header cells are left blank there too.
+  const headerRow = 8
   const headers: [number, string][] = [
     [1, '№'],
     [2, 'Название'],
     [5, 'Кол-во'],
-    [6, 'Сумма'],
   ]
   for (const [col, text] of headers) {
     const cell = ws.getCell(headerRow, col)
     cell.value = text
-    cell.font = { bold: true, size: 8 }
-    cell.alignment = { horizontal: 'center' }
+    cell.font = { name: 'sans-serif', size: 8, bold: true }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
   }
-  for (let col = 1; col <= 7; col++) {
-    ws.getCell(headerRow, col).border = THIN_BORDER
+  for (let col = 1; col <= 5; col++) {
+    const cell = ws.getCell(headerRow, col)
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD5D5D5' } }
+    cell.border = MEDIUM_BORDER
   }
 
-  const aligns: Record<number, 'left' | 'right' | 'center'> = { 1: 'right', 2: 'left', 3: 'left', 4: 'left', 5: 'right', 6: 'center' }
+  const aligns: Record<number, 'left' | 'right' | 'center'> = { 1: 'right', 2: 'left', 3: 'left', 4: 'left', 5: 'right' }
   lineItems.forEach((line, i) => {
     const r = headerRow + 1 + i
-    ws.mergeCells(r, 6, r, 7)
     const values: Record<number, string | number> = {
       1: i + 1,
       2: line.name,
       3: line.category,
       4: line.unit,
       5: line.qty,
-      6: line.qty * line.unitPrice,
     }
-    for (let col = 1; col <= 6; col++) {
+    for (let col = 1; col <= 5; col++) {
       const cell = ws.getCell(r, col)
       cell.value = values[col]
-      cell.font = { size: 8 }
-      cell.alignment = { horizontal: aligns[col] }
-      cell.border = THIN_BORDER
+      cell.font = { name: 'sans-serif', size: 8 }
+      cell.alignment = { horizontal: aligns[col], vertical: 'top' }
+      cell.border = MEDIUM_BORDER
+      if (col === 1 || col === 5) cell.numFmt = '#,##0'
     }
-    ws.getCell(r, 7).border = THIN_BORDER
   })
 
   await triggerXlsxDownload(wb, `Накладная №${order.orderNumber}.xlsx`)

@@ -9,6 +9,13 @@ export const THIN_BORDER: Partial<ExcelJS.Borders> = {
   right: { style: 'thin' },
 }
 
+export const MEDIUM_BORDER: Partial<ExcelJS.Borders> = {
+  top: { style: 'medium' },
+  bottom: { style: 'medium' },
+  left: { style: 'medium' },
+  right: { style: 'medium' },
+}
+
 export async function triggerXlsxDownload(wb: ExcelJS.Workbook, filename: string) {
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
