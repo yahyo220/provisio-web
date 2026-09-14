@@ -133,6 +133,7 @@ export async function fetchAll(): Promise<FetchedData> {
     bankTransferRequested: Boolean(row.bank_transfer_requested),
     cashEnabled: Boolean(row.cash_enabled),
     cashRequested: Boolean(row.cash_requested),
+    loginLockedAt: row.login_locked_at ?? null,
     hasLogin: Boolean(row.auth_user_id),
     createdAt: row.created_at,
   }))
@@ -143,6 +144,7 @@ export async function fetchAll(): Promise<FetchedData> {
     phone: row.phone || '',
     active: row.active ?? true,
     hasLogin: Boolean(row.auth_user_id),
+    loginLockedAt: row.login_locked_at ?? null,
   }))
 
   const driversById = new Map((driversRes.data ?? []).map((d) => [d.id, d]))
@@ -319,6 +321,12 @@ export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>)
     dbPatch.cash_enabled = patch.cashEnabled
     dbPatch.cash_requested = false
   }
+  if (patch.loginLockedAt !== undefined) {
+    // Only ever unlocked from here (set to null) — there's no UI path that
+    // locks an account manually, only the login Edge Function does that.
+    dbPatch.login_locked_at = patch.loginLockedAt
+    dbPatch.failed_login_attempts = 0
+  }
   const { error } = await db.from('customers').update(dbPatch).eq('id', id)
   if (error) throw error
 }
@@ -360,6 +368,20 @@ async function resolveDriverId(name: string): Promise<string> {
   const created = await db.from('drivers').insert({ name }).select('id').single()
   if (created.error) throw created.error
   return created.data.id
+}
+
+export async function updateDriverRow(id: string, patch: Partial<DriverRow>) {
+  const db = assertClient()
+  const dbPatch: Record<string, unknown> = {}
+  if (patch.loginLockedAt !== undefined) {
+    // Same one-way unlock as updateCustomerRow — nothing in this dashboard
+    // ever locks an account manually, only the login Edge Function does.
+    dbPatch.login_locked_at = patch.loginLockedAt
+    dbPatch.failed_login_attempts = 0
+  }
+  if (Object.keys(dbPatch).length === 0) return
+  const { error } = await db.from('drivers').update(dbPatch).eq('id', id)
+  if (error) throw error
 }
 
 export async function assignDriverToDelivery(deliveryId: string, driverName: string) {

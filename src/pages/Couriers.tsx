@@ -6,8 +6,18 @@ import Modal from '../components/ui/Modal'
 import { useData } from '../store/DataContext'
 
 export default function Couriers() {
-  const { driverRows, addCourier } = useData()
+  const { driverRows, addCourier, updateDriver } = useData()
   const [open, setOpen] = useState(false)
+  const [unlockingId, setUnlockingId] = useState<string | null>(null)
+
+  async function handleUnlock(id: string) {
+    setUnlockingId(id)
+    try {
+      await updateDriver(id, { loginLockedAt: null })
+    } finally {
+      setUnlockingId(null)
+    }
+  }
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [login, setLogin] = useState('')
@@ -92,7 +102,18 @@ export default function Couriers() {
                     )}
                   </td>
                   <td>
-                    <span className="cat-tag">{d.active ? 'Активен' : 'Отключён'}</span>
+                    {d.loginLockedAt ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="cat-tag" style={{ color: 'var(--danger, #d33)' }}>
+                          Заблокирован
+                        </span>
+                        <Button variant="ghost" onClick={() => handleUnlock(d.id)} disabled={unlockingId === d.id}>
+                          {unlockingId === d.id ? 'Разблокируем…' : 'Разблокировать'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="cat-tag">{d.active ? 'Активен' : 'Отключён'}</span>
+                    )}
                   </td>
                 </tr>
               ))}

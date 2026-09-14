@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
 
     if (!role || !['courier', 'customer'].includes(role)) return json({ error: 'role must be "courier" or "customer"' }, 400)
     if (!email || !password) return json({ error: 'login (or email) and password are required' }, 400)
-    if (password.length < 6) return json({ error: 'password must be at least 6 characters' }, 400)
+    if (password.length < 8) return json({ error: 'password must be at least 8 characters' }, 400)
 
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email,

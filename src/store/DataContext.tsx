@@ -10,6 +10,7 @@ import {
   insertProduct,
   updateCustomerRow,
   updateDeliveryRow,
+  updateDriverRow,
   updateOrderPayment as updateOrderPaymentRow,
   updateOrderStatus as updateOrderStatusRow,
   updateProductRow,
@@ -92,6 +93,7 @@ interface DataContextValue {
   driverRows: DriverRow[]
   assignDriver: (deliveryId: string, driver: string) => Promise<void>
   updateDelivery: (id: string, patch: Partial<DeliveryRow>) => Promise<void>
+  updateDriver: (id: string, patch: Partial<DriverRow>) => Promise<void>
   addCourier: (input: { name: string; phone: string; login: string; password: string }) => Promise<void>
 }
 
@@ -264,6 +266,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               bankTransferRequested: false,
               cashEnabled: false,
               cashRequested: false,
+              loginLockedAt: null,
               createdAt: new Date().toISOString(),
             },
             ...prev,
@@ -285,6 +288,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       deliveries,
       drivers,
       driverRows,
+      updateDriver: async (id, patch) => {
+        if (!connected) {
+          setDriverRows((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)))
+          return
+        }
+        await updateDriverRow(id, patch)
+        await refresh()
+      },
       addCourier: async (input) => {
         if (!connected) return
         await createCourierAccount(input)

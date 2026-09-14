@@ -123,6 +123,10 @@ export interface CustomerRow {
    * one of these two. */
   cashEnabled: boolean
   cashRequested: boolean
+  /** Set once 3 failed sign-in attempts locked the account (see
+   * migration 0044_login_attempt_lockout.sql) — null means not locked.
+   * Only an admin can clear it; a customer can never unlock themselves. */
+  loginLockedAt: string | null
   /** Raw ISO timestamp — for stats math (see lib/stats.ts), same idea as OrderRow.createdAt. */
   createdAt: string
 }
@@ -135,6 +139,7 @@ export interface DriverRow {
   phone: string
   active: boolean
   hasLogin: boolean
+  loginLockedAt: string | null
 }
 
 export interface DeliveryRow {

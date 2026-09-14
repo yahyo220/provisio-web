@@ -51,6 +51,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const [bankTransferBusy, setBankTransferBusy] = useState(false)
   const [cashEnabled, setCashEnabled] = useState(customer.cashEnabled)
   const [cashBusy, setCashBusy] = useState(false)
+  const [loginLockedAt, setLoginLockedAt] = useState(customer.loginLockedAt)
+  const [unlocking, setUnlocking] = useState(false)
 
   const customerOrders = orders.filter((o) => o.customerId === customer.id)
 
@@ -87,6 +89,18 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
       await updateCustomer(customer.id, { cashEnabled: next })
     } finally {
       setCashBusy(false)
+    }
+  }
+
+  // The only way this ever gets cleared — a customer can never unlock
+  // themselves, even with the right password (see 0044_login_attempt_lockout.sql).
+  async function handleUnlock() {
+    setUnlocking(true)
+    try {
+      await updateCustomer(customer.id, { loginLockedAt: null })
+      setLoginLockedAt(null)
+    } finally {
+      setUnlocking(false)
     }
   }
 
@@ -211,6 +225,20 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
                   </Button>
                 )}
               </div>
+
+              {loginLockedAt && (
+                <div className="status-row" style={{ marginTop: 16 }}>
+                  <div>
+                    <div className="lbl">Аккаунт заблокирован</div>
+                    <div className="sub">
+                      3 неверные попытки входа подряд — клиент не может войти в приложение, пока вы не разблокируете.
+                    </div>
+                  </div>
+                  <Button variant="primary" onClick={handleUnlock} disabled={unlocking}>
+                    {unlocking ? 'Разблокируем…' : 'Разблокировать'}
+                  </Button>
+                </div>
+              )}
 
               <div className="field" style={{ marginTop: 16 }}>
                 <label htmlFor="cd-price-tier">Тип цены для клиента</label>
