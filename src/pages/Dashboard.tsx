@@ -4,9 +4,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import PaymentLabel from '../components/ui/PaymentLabel'
+import RevenueChart from '../components/ui/RevenueChart'
 import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../i18n/LanguageContext'
-import { computeCategoryBreakdown, computeDashboardKpis, computeRevenueChart, computeTopProducts } from '../lib/stats'
+import { computeCategoryBreakdown, computeDailyRevenueSeries, computeDashboardKpis, computeTopProducts, PERIOD_KEY } from '../lib/stats'
 import type { RevenueRange } from '../lib/stats'
 import { useData } from '../store/DataContext'
 
@@ -25,11 +26,7 @@ export default function Dashboard() {
   const [range, setRange] = useState<RevenueRange>('1M')
 
   const kpis = useMemo(() => computeDashboardKpis(orders, customers), [orders, customers])
-  const chart = useMemo(() => computeRevenueChart(orders, range), [orders, range])
-  const chartTop = useMemo(() => {
-    const ys = chart.points.split(' ').map((p) => Number(p.split(',')[1]))
-    return Math.min(...ys)
-  }, [chart])
+  const dailyRevenue = useMemo(() => computeDailyRevenueSeries(orders), [orders])
   const topProducts = useMemo(
     () => computeTopProducts(orders, orderItems, products, range),
     [orders, orderItems, products, range],
@@ -39,7 +36,7 @@ export default function Dashboard() {
     [orders, orderItems, products, range],
   )
   const recentOrders = orders.slice(0, 5)
-  const periodLabel = t(`period.${chart.periodKey}`)
+  const periodLabel = t(`period.${PERIOD_KEY[range]}`)
 
   return (
     <>
@@ -49,6 +46,23 @@ export default function Dashboard() {
           <p>{t('dashboard.subtitle')}</p>
         </div>
         <div className="header-actions">
+          {/* Still drives the KPIs / top products / category breakdown below
+              — only the revenue chart itself moved off fixed presets, onto
+              its own free zoom/pan. */}
+          <div className="range-pills" role="tablist" aria-label="Stats time range">
+            {RANGES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                className="range-pill"
+                role="tab"
+                aria-selected={range === r}
+                onClick={() => setRange(r)}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
           <Button variant="ghost" icon={<Download />}>
             {t('common.exportReport')}
           </Button>
@@ -81,63 +95,10 @@ export default function Dashboard() {
         <Card>
           <div className="chart-head">
             <div className="stat-line">
-              <span className="stat-val">{chart.stat}</span>
-              <span className="stat-cap">
-                {t('common.revenue')} · {periodLabel}
-              </span>
-            </div>
-            <div className="range-pills" role="tablist" aria-label="Revenue chart time range">
-              {RANGES.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  className="range-pill"
-                  role="tab"
-                  aria-selected={range === r}
-                  onClick={() => setRange(r)}
-                >
-                  {r}
-                </button>
-              ))}
+              <span className="stat-cap">{t('common.revenue')} · {t('dashboard.scrollToZoom')}</span>
             </div>
           </div>
-          <svg
-            viewBox="0 0 640 220"
-            width="100%"
-            height="220"
-            preserveAspectRatio="none"
-            role="img"
-            aria-label={`${t('common.revenue')} · ${periodLabel}`}
-          >
-            <line x1="0" y1="40" x2="640" y2="40" stroke="var(--gesso-divider)" strokeWidth="1" />
-            <line x1="0" y1="100" x2="640" y2="100" stroke="var(--gesso-divider)" strokeWidth="1" />
-            <line x1="0" y1="160" x2="640" y2="160" stroke="var(--gesso-divider)" strokeWidth="1" />
-            <polyline
-              fill="none"
-              stroke="var(--gesso-accent)"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              points={chart.points}
-            />
-            <circle cx="640" cy={chartTop} r="5" fill="var(--gesso-accent)" />
-            {chart.axis.map((axisLabel, i) => (
-              <text
-                key={`${axisLabel}-${i}`}
-                x={i === chart.axis.length - 1 ? 615 : (i * 640) / (chart.axis.length - 1)}
-                y="212"
-                className="axis-label"
-              >
-                {axisLabel}
-              </text>
-            ))}
-          </svg>
-          <div className="legend-row">
-            <div className="legend-item">
-              <span className="legend-dot" style={{ background: 'var(--gesso-accent)' }} />
-              {t('common.revenue')}
-            </div>
-          </div>
+          <RevenueChart data={dailyRevenue} />
         </Card>
 
         <Card style={{ display: 'flex', flexDirection: 'column' }}>

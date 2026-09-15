@@ -5,6 +5,7 @@
 // with real computation) -- every KPI, chart and breakdown on the site
 // read as "broken" even with real paid orders in the database, because
 // nothing here was ever wired to the live data at all.
+import type { UTCTimestamp } from 'lightweight-charts'
 import type { RevenueRange } from './data'
 import { formatMoney } from './format'
 import type { CustomerRow, DeliveryRow, OrderItemRow, OrderRow, OrderStatus, PaymentStatus, ProductRow } from './types'
@@ -81,7 +82,7 @@ export interface RevenueChart {
   axis: string[]
 }
 
-const PERIOD_KEY: Record<RevenueRange, string> = {
+export const PERIOD_KEY: Record<RevenueRange, string> = {
   '1W': 'last7days',
   '1M': 'last30days',
   '3M': 'last3months',
@@ -130,6 +131,30 @@ export function computeRevenueChart(orders: OrderRow[], range: RevenueRange): Re
   const axis = bucketDates.map((d) => `${d.getDate()}.${d.getMonth() + 1}`)
 
   return { stat: formatMoney(total), periodKey: PERIOD_KEY[range], points, axis }
+}
+
+/** One point per calendar day from the earliest order through today (every
+ * day filled, even at 0 revenue, so the line doesn't jump across gaps) —
+ * for the interactive exchange-style chart (RevenueChart.tsx), which does
+ * its own zoom/pan over the full history instead of a fixed preset range. */
+export function computeDailyRevenueSeries(orders: OrderRow[]): { time: UTCTimestamp; value: number }[] {
+  const live = orders.filter((o) => o.status !== 'cancelled')
+  if (live.length === 0) return []
+
+  const dayTotals = new Map<number, number>()
+  let earliest = startOfDay(new Date()).getTime()
+  for (const o of live) {
+    const day = startOfDay(new Date(o.createdAt)).getTime()
+    dayTotals.set(day, (dayTotals.get(day) ?? 0) + o.totalRaw)
+    if (day < earliest) earliest = day
+  }
+
+  const today = startOfDay(new Date()).getTime()
+  const points: { time: UTCTimestamp; value: number }[] = []
+  for (let t = earliest; t <= today; t += 86400000) {
+    points.push({ time: Math.floor(t / 1000) as UTCTimestamp, value: dayTotals.get(t) ?? 0 })
+  }
+  return points
 }
 
 function ordersInRange(orders: OrderRow[], range: RevenueRange): Set<string> {

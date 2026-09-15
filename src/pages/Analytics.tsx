@@ -3,13 +3,16 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
+import RevenueChart from '../components/ui/RevenueChart'
 import { useLanguage } from '../i18n/LanguageContext'
+import { fetchOrderItems } from '../lib/api'
+import { downloadOrderExcelWithPrice, downloadWeeklyInvoiceExcel } from '../lib/exportInvoices'
 import {
   computeAnalyticsKpis,
   computeCategoryBreakdown,
+  computeDailyRevenueSeries,
   computePaymentBreakdown,
   computeProductPerformance,
-  computeRevenueChart,
   computeTopCustomersBySpend,
 } from '../lib/stats'
 import type { RevenueRange } from '../lib/stats'
@@ -17,12 +20,64 @@ import { useData } from '../store/DataContext'
 
 const RANGES: RevenueRange[] = ['1W', '1M', '3M', '1Y']
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
+function daysAgoIso(days: number) {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+
 export default function Analytics() {
-  const { orders, orderItems, products } = useData()
+  const { orders, orderItems, customers, products } = useData()
   const { t, label, ref: refText, category } = useLanguage()
   const [range, setRange] = useState<RevenueRange>('1M')
 
-  const chart = useMemo(() => computeRevenueChart(orders, range), [orders, range])
+  const sortedOrders = useMemo(
+    () => [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [orders],
+  )
+  const [invoiceOrderId, setInvoiceOrderId] = useState('')
+  const [downloadingOrderInvoice, setDownloadingOrderInvoice] = useState(false)
+
+  const [invoiceCustomerId, setInvoiceCustomerId] = useState('')
+  const [dateFrom, setDateFrom] = useState(daysAgoIso(7))
+  const [dateTo, setDateTo] = useState(todayIso())
+  const [downloadingWeekly, setDownloadingWeekly] = useState(false)
+  const [weeklyError, setWeeklyError] = useState<string | null>(null)
+
+  async function handleDownloadOrderInvoice() {
+    const order = orders.find((o) => o.id === invoiceOrderId)
+    if (!order) return
+    setDownloadingOrderInvoice(true)
+    try {
+      const customer = customers.find((c) => c.id === order.customerId)
+      const lineItems = await fetchOrderItems(order.id)
+      await downloadOrderExcelWithPrice(order, customer, lineItems)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setDownloadingOrderInvoice(false)
+    }
+  }
+
+  async function handleDownloadWeeklyInvoice() {
+    const customer = customers.find((c) => c.id === invoiceCustomerId)
+    if (!customer) return
+    setWeeklyError(null)
+    setDownloadingWeekly(true)
+    try {
+      const count = await downloadWeeklyInvoiceExcel({ customer, orders, orderItems, products, dateFrom, dateTo })
+      if (count === 0) setWeeklyError(t('analytics.invoices.noOrdersInRange'))
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setDownloadingWeekly(false)
+    }
+  }
+
+  const dailyRevenue = useMemo(() => computeDailyRevenueSeries(orders), [orders])
   const kpis = useMemo(() => computeAnalyticsKpis(orders, range), [orders, range])
   const categories = useMemo(() => computeCategoryBreakdown(orders, orderItems, products, range), [orders, orderItems, products, range])
   const paymentBreakdown = useMemo(() => computePaymentBreakdown(orders, range), [orders, range])
@@ -31,12 +86,6 @@ export default function Analytics() {
     [orders, orderItems, products, range],
   )
   const topCustomersBySpend = useMemo(() => computeTopCustomersBySpend(orders, range), [orders, range])
-  const periodLabel = t(`period.${chart.periodKey}`)
-
-  const chartTop = useMemo(() => {
-    const ys = chart.points.split(' ').map((p) => Number(p.split(',')[1]))
-    return Math.min(...ys)
-  }, [chart])
 
   return (
     <>
@@ -46,6 +95,23 @@ export default function Analytics() {
           <p>{t('analytics.subtitle')}</p>
         </div>
         <div className="header-actions">
+          {/* Still drives the KPIs / category / payment / product-performance
+              / top-customers stats below — only the revenue chart itself
+              moved off fixed presets, onto its own free zoom/pan. */}
+          <div className="range-pills" role="tablist" aria-label="Stats time range">
+            {RANGES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                className="range-pill"
+                role="tab"
+                aria-selected={range === r}
+                onClick={() => setRange(r)}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
           <Button variant="ghost" icon={<Download />}>
             {t('common.exportReport')}
           </Button>
@@ -76,57 +142,10 @@ export default function Analytics() {
       <Card>
         <div className="chart-head">
           <div className="stat-line">
-            <span className="stat-val">{chart.stat}</span>
-            <span className="stat-cap">
-              {t('common.revenue')} · {periodLabel}
-            </span>
-          </div>
-          <div className="range-pills" role="tablist" aria-label="Revenue chart time range">
-            {RANGES.map((r) => (
-              <button
-                key={r}
-                type="button"
-                className="range-pill"
-                role="tab"
-                aria-selected={range === r}
-                onClick={() => setRange(r)}
-              >
-                {r}
-              </button>
-            ))}
+            <span className="stat-cap">{t('common.revenue')} · {t('dashboard.scrollToZoom')}</span>
           </div>
         </div>
-        <svg
-          viewBox="0 0 640 220"
-          width="100%"
-          height="220"
-          preserveAspectRatio="none"
-          role="img"
-          aria-label={`${t('common.revenue')} · ${periodLabel}`}
-        >
-          <line x1="0" y1="40" x2="640" y2="40" stroke="var(--gesso-divider)" strokeWidth="1" />
-          <line x1="0" y1="100" x2="640" y2="100" stroke="var(--gesso-divider)" strokeWidth="1" />
-          <line x1="0" y1="160" x2="640" y2="160" stroke="var(--gesso-divider)" strokeWidth="1" />
-          <polyline
-            fill="none"
-            stroke="var(--gesso-accent)"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            points={chart.points}
-          />
-          <circle cx="640" cy={chartTop} r="5" fill="var(--gesso-accent)" />
-          {chart.axis.map((axisLabel, i) => (
-            <text
-              key={`${axisLabel}-${i}`}
-              x={i === chart.axis.length - 1 ? 615 : (i * 640) / (chart.axis.length - 1)}
-              y="212"
-              className="axis-label"
-            >
-              {axisLabel}
-            </text>
-          ))}
-        </svg>
+        <RevenueChart data={dailyRevenue} />
       </Card>
 
       <section className="charts-grid">
@@ -231,6 +250,80 @@ export default function Analytics() {
           </div>
         </Card>
       </section>
+
+      <Card>
+        <p className="section-label">{t('analytics.invoices.title')}</p>
+        <div className="charts-grid" style={{ marginTop: 8 }}>
+          <div>
+            <p className="sub" style={{ marginBottom: 12 }}>
+              {t('analytics.invoices.singleOrder')}
+            </p>
+            <div className="field">
+              <div className="select-wrap">
+                <select value={invoiceOrderId} onChange={(e) => setInvoiceOrderId(e.target.value)}>
+                  <option value="">{t('analytics.invoices.selectOrder')}</option>
+                  {sortedOrders.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      #{o.orderNumber} · {o.customer} · {o.date}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              icon={<Download />}
+              disabled={!invoiceOrderId || downloadingOrderInvoice}
+              onClick={handleDownloadOrderInvoice}
+              style={{ marginTop: 12 }}
+            >
+              {downloadingOrderInvoice ? '…' : t('analytics.invoices.download')}
+            </Button>
+          </div>
+
+          <div>
+            <p className="sub" style={{ marginBottom: 12 }}>
+              {t('analytics.invoices.weekly')}
+            </p>
+            <div className="field">
+              <div className="select-wrap">
+                <select value={invoiceCustomerId} onChange={(e) => setInvoiceCustomerId(e.target.value)}>
+                  <option value="">{t('analytics.invoices.selectCustomer')}</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+              <div className="field" style={{ flex: 1 }}>
+                <label htmlFor="an-date-from">{t('analytics.invoices.from')}</label>
+                <input id="an-date-from" type="date" value={dateFrom} max={dateTo} onChange={(e) => setDateFrom(e.target.value)} />
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label htmlFor="an-date-to">{t('analytics.invoices.to')}</label>
+                <input id="an-date-to" type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} />
+              </div>
+            </div>
+            {weeklyError && (
+              <p className="sub" style={{ color: 'var(--gesso-danger, #d33)', marginTop: 8 }}>
+                {weeklyError}
+              </p>
+            )}
+            <Button
+              variant="primary"
+              icon={<Download />}
+              disabled={!invoiceCustomerId || downloadingWeekly}
+              onClick={handleDownloadWeeklyInvoice}
+              style={{ marginTop: 12 }}
+            >
+              {downloadingWeekly ? '…' : t('analytics.invoices.download')}
+            </Button>
+          </div>
+        </div>
+      </Card>
     </>
   )
 }
