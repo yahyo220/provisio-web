@@ -271,8 +271,11 @@ export async function uploadProductPhoto(file: File, keyPrefix: string): Promise
   const db = assertClient()
   const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
   const path = `${keyPrefix}/${Date.now()}.${ext}`
+  // Every upload gets a fresh timestamped path (never overwritten in place), so
+  // a URL's content never changes — safe to let phones and browsers keep the
+  // file for a year instead of re-checking it after an hour.
   const { error } = await db.storage.from('product-photos').upload(path, file, {
-    cacheControl: '3600',
+    cacheControl: '31536000',
     upsert: false,
   })
   if (error) throw error
