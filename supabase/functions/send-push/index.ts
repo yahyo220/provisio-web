@@ -135,6 +135,24 @@ async function sendPushToAll(tokens: unknown, title: string, body: string, data:
   await Promise.all(tokens.filter((t): t is string => typeof t === 'string' && t.length > 0).map((t) => sendPush(t, title, body, data)))
 }
 
+// Every push is also stored as a row in `notifications` (migration 0045) —
+// that's what the app's in-app Notifications panel and its red "new" dot
+// read, so a push that was missed (app closed, notification swiped away)
+// still shows up there. Stored first and independently of FCM: a failed
+// push must not lose the notification, and an account with no registered
+// device still gets it in the panel next time the app opens.
+async function storeNotification(
+  owner: { customer_id?: string; driver_id?: string },
+  type: string,
+  title: string,
+  body: string,
+  data: Record<string, string> = {},
+) {
+  if (!owner.customer_id && !owner.driver_id) return
+  const { error } = await admin.from('notifications').insert({ ...owner, type, title, body, data })
+  if (error) console.error('notification insert failed', error.message)
+}
+
 // ---------------------------------------------------------------------------
 // Webhook payload → notification
 // ---------------------------------------------------------------------------
@@ -162,17 +180,19 @@ Deno.serve(async (req) => {
           .select('fcm_tokens')
           .eq('id', record.customer_id as string)
           .maybeSingle()
-        await sendPushToAll(customer?.fcm_tokens, ORDER_STATUS_LABEL[newStatus], `Заказ №${record.order_number ?? ''}`.trim(), {
-          type: 'order_status',
-          orderId: String(record.id ?? ''),
-        })
+        const title = ORDER_STATUS_LABEL[newStatus]
+        const body = `Заказ №${record.order_number ?? ''}`.trim()
+        const data = { type: 'order_status', orderId: String(record.id ?? '') }
+        await storeNotification({ customer_id: record.customer_id as string }, 'order_status', title, body, data)
+        await sendPushToAll(customer?.fcm_tokens, title, body, data)
       }
     } else if (table === 'customers' && type === 'UPDATE') {
       const becameApproved = old_record?.approval_status !== 'approved' && record.approval_status === 'approved'
       if (becameApproved) {
-        await sendPushToAll(record.fcm_tokens, 'Аккаунт подтверждён', 'Теперь вы можете оформлять заказы в Freshline.', {
-          type: 'account_approved',
-        })
+        const title = 'Аккаунт подтверждён'
+        const body = 'Теперь вы можете оформлять заказы в Freshline.'
+        await storeNotification({ customer_id: record.id as string }, 'account_approved', title, body, { type: 'account_approved' })
+        await sendPushToAll(record.fcm_tokens, title, body, { type: 'account_approved' })
       }
     } else if (table === 'support_messages' && type === 'INSERT') {
       if (record.sender === 'admin') {
@@ -182,22 +202,27 @@ Deno.serve(async (req) => {
         const ownerId = (record.driver_id ?? record.customer_id) as string
         const { data: owner } = await admin.from(ownerTable).select('fcm_tokens').eq('id', ownerId).maybeSingle()
         const text = String(record.message ?? '')
-        await sendPushToAll(
-          owner?.fcm_tokens,
-          'Новое сообщение от поддержки',
-          text.length > 120 ? `${text.slice(0, 117)}...` : text,
+        const title = 'Новое сообщение от поддержки'
+        const body = text.length > 120 ? `${text.slice(0, 117)}...` : text
+        await storeNotification(
+          record.driver_id ? { driver_id: ownerId } : { customer_id: ownerId },
+          'support_message',
+          title,
+          body,
           { type: 'support_message' },
         )
+        await sendPushToAll(owner?.fcm_tokens, title, body, { type: 'support_message' })
       }
     } else if (table === 'deliveries' && (type === 'UPDATE' || type === 'INSERT')) {
       const driverId = record.driver_id as string | undefined
       const driverChanged = driverId && driverId !== (old_record?.driver_id as string | undefined)
       if (driverChanged) {
         const { data: driver } = await admin.from('drivers').select('fcm_tokens').eq('id', driverId).maybeSingle()
-        await sendPushToAll(driver?.fcm_tokens, 'Новая доставка', record.address ? String(record.address) : 'Вам назначена доставка.', {
-          type: 'delivery_assigned',
-          deliveryId: String(record.id ?? ''),
-        })
+        const title = 'Новая доставка'
+        const body = record.address ? String(record.address) : 'Вам назначена доставка.'
+        const data = { type: 'delivery_assigned', deliveryId: String(record.id ?? '') }
+        await storeNotification({ driver_id: driverId }, 'delivery_assigned', title, body, data)
+        await sendPushToAll(driver?.fcm_tokens, title, body, data)
       }
     }
 
