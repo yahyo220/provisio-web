@@ -1,7 +1,19 @@
-import { Send } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Send, Star } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Card from '../components/ui/Card'
-import { fetchSupportMessages, fetchSupportThreads, sendSupportMessage, type SupportMessageRow, type SupportThread } from '../lib/api'
+import Modal from '../components/ui/Modal'
+import {
+  fetchFeedbackDetail,
+  fetchSupportMessages,
+  fetchSupportThreads,
+  markSupportMessageRead,
+  markSupportThreadRead,
+  sendSupportMessage,
+  type FeedbackDetail,
+  type SupportMessageRow,
+  type SupportThread,
+} from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { useData } from '../store/DataContext'
 
@@ -16,6 +28,12 @@ export default function Support() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [review, setReview] = useState<FeedbackDetail | null>(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  // The realtime handler below outlives renders — it reads the open thread
+  // through a ref so it never acts on a stale one.
+  const activeRef = useRef<Active | null>(null)
+  activeRef.current = active
 
   function ownerName(t: { ownerId: string; ownerType: 'customer' | 'driver' }) {
     if (t.ownerType === 'driver') return driverRows.find((d) => d.id === t.ownerId)?.name ?? 'Курьер'
@@ -33,6 +51,34 @@ export default function Support() {
     }
   }
 
+  // Quiet refresh (no "Загрузка…" flash) for live updates.
+  const refreshThreads = useCallback(async () => {
+    try {
+      setThreads(await fetchSupportThreads())
+    } catch {
+      /* keep what's on screen */
+    }
+  }, [])
+
+  // Loads the open thread, and marks whatever the customer/courier typed as
+  // seen (review entries stay lit until they're actually opened).
+  const refreshMessages = useCallback(
+    async (target: Active) => {
+      const list = await fetchSupportMessages(target.ownerId, target.ownerType)
+      if (activeRef.current?.ownerId !== target.ownerId) return
+      setMessages(list)
+      if (list.some((m) => m.sender !== 'admin' && !m.readAt && !m.feedbackId)) {
+        try {
+          await markSupportThreadRead(target.ownerId, target.ownerType)
+        } catch {
+          /* will retry on the next update */
+        }
+        refreshThreads()
+      }
+    },
+    [refreshThreads],
+  )
+
   useEffect(() => {
     loadThreads()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -40,23 +86,42 @@ export default function Support() {
 
   useEffect(() => {
     if (!active) return
-    fetchSupportMessages(active.ownerId, active.ownerType).then(setMessages)
-  }, [active])
+    refreshMessages(active)
+  }, [active, refreshMessages])
 
+  // One subscription for the whole inbox: a new message (or a review) in any
+  // thread lights that thread up in the list right away.
   useEffect(() => {
-    if (!supabase || !active) return
+    if (!supabase) return
     const client = supabase
-    const column = active.ownerType === 'driver' ? 'driver_id' : 'customer_id'
     const channel = client
-      .channel(`support-${active.ownerType}-${active.ownerId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages', filter: `${column}=eq.${active.ownerId}` }, () => {
-        fetchSupportMessages(active.ownerId, active.ownerType).then(setMessages)
+      .channel('support-inbox')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => {
+        refreshThreads()
+        const open = activeRef.current
+        if (open) refreshMessages(open)
       })
       .subscribe()
     return () => {
       client.removeChannel(channel)
     }
-  }, [active])
+  }, [refreshThreads, refreshMessages])
+
+  async function openReview(m: SupportMessageRow) {
+    if (!m.feedbackId) return
+    setReviewLoading(true)
+    try {
+      const detail = await fetchFeedbackDetail(m.feedbackId)
+      setReview(detail)
+      if (!m.readAt) {
+        setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, readAt: new Date().toISOString() } : x)))
+        await markSupportMessageRead(m.id)
+        refreshThreads()
+      }
+    } finally {
+      setReviewLoading(false)
+    }
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
@@ -71,7 +136,7 @@ export default function Support() {
       await sendSupportMessage(active.ownerId, active.ownerType, text)
       const updated = await fetchSupportMessages(active.ownerId, active.ownerType)
       setMessages(updated)
-      loadThreads()
+      refreshThreads()
     } finally {
       setSending(false)
     }
@@ -148,23 +213,45 @@ export default function Support() {
                 {active.ownerType === 'driver' && <RoleBadge />}
               </div>
               <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    style={{
-                      alignSelf: m.sender === 'admin' ? 'flex-end' : 'flex-start',
-                      maxWidth: '70%',
-                      background: m.sender === 'admin' ? 'var(--gesso-accent, #1E5C3E)' : 'var(--gesso-surface-recessed, rgba(0,0,0,0.05))',
-                      color: m.sender === 'admin' ? '#fff' : 'inherit',
-                      borderRadius: 14,
-                      padding: '10px 14px',
-                      fontSize: 14,
-                    }}
-                  >
-                    {m.message}
-                    <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>{new Date(m.createdAt).toLocaleString()}</div>
-                  </div>
-                ))}
+                {messages.map((m) =>
+                  m.feedbackId ? (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`support-review${m.readAt ? '' : ' is-new'}`}
+                      disabled={reviewLoading}
+                      onClick={() => openReview(m)}
+                    >
+                      <span className="support-review-icon">
+                        <Star style={{ width: 18, height: 18 }} />
+                      </span>
+                      <span className="support-review-body">
+                        <span className="support-review-title">
+                          {m.message}
+                          {!m.readAt && <span className="support-review-chip">Новый</span>}
+                        </span>
+                        <span className="support-review-hint">Нажмите, чтобы открыть отзыв и фото</span>
+                        <span className="support-review-time">{new Date(m.createdAt).toLocaleString()}</span>
+                      </span>
+                    </button>
+                  ) : (
+                    <div
+                      key={m.id}
+                      style={{
+                        alignSelf: m.sender === 'admin' ? 'flex-end' : 'flex-start',
+                        maxWidth: '70%',
+                        background: m.sender === 'admin' ? 'var(--gesso-accent, #1E5C3E)' : 'var(--gesso-surface-recessed, rgba(0,0,0,0.05))',
+                        color: m.sender === 'admin' ? '#fff' : 'inherit',
+                        borderRadius: 14,
+                        padding: '10px 14px',
+                        fontSize: 14,
+                      }}
+                    >
+                      {m.message}
+                      <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>{new Date(m.createdAt).toLocaleString()}</div>
+                    </div>
+                  ),
+                )}
               </div>
               <div style={{ display: 'flex', gap: 8, padding: 16, borderTop: '1px solid var(--gesso-divider)' }}>
                 <input
@@ -183,6 +270,48 @@ export default function Support() {
           )}
         </Card>
       </div>
+
+      {review && (
+        <Modal
+          title={review.orderNumber != null ? `Отзыв за заказ №${review.orderNumber}` : 'Отзыв за заказ'}
+          onClose={() => setReview(null)}
+          footer={
+            <>
+              <Link className="btn" to={`/orders/${review.orderId}`} onClick={() => setReview(null)}>
+                Открыть заказ
+              </Link>
+              <button type="button" className="btn btn-primary" onClick={() => setReview(null)}>
+                Закрыть
+              </button>
+            </>
+          }
+        >
+          {review.customerName && (
+            <div style={{ fontSize: 13, color: 'var(--gesso-fg-muted)', marginBottom: 8 }}>{review.customerName}</div>
+          )}
+          {review.message ? (
+            <div style={{ fontSize: 15, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{review.message}</div>
+          ) : (
+            <div style={{ fontSize: 14, color: 'var(--gesso-fg-muted)' }}>Без текста — только фото.</div>
+          )}
+          {review.photoUrls.length > 0 && (
+            <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+              {review.photoUrls.map((url) => (
+                <a key={url} href={url} target="_blank" rel="noreferrer">
+                  <img
+                    src={url}
+                    alt="Фото от клиента"
+                    style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 'var(--gesso-radius-sm)' }}
+                  />
+                </a>
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: 'var(--gesso-fg-muted)', marginTop: 12 }}>
+            {new Date(review.createdAt).toLocaleString()}
+          </div>
+        </Modal>
+      )}
     </>
   )
 }

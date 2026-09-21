@@ -472,6 +472,10 @@ export interface SupportMessageRow {
   sender: 'customer' | 'driver' | 'admin'
   message: string
   createdAt: string
+  /** Set when this message is the "Отзыв за заказ №N" entry for an order review. */
+  feedbackId: string | null
+  /** For customer/courier messages: when the admin opened it (null = still unread). */
+  readAt: string | null
 }
 
 export interface SupportThread {
@@ -486,19 +490,22 @@ export async function fetchSupportThreads(): Promise<SupportThread[]> {
   const db = assertClient()
   const { data, error } = await db
     .from('support_messages')
-    .select('customer_id, driver_id, sender, message, created_at')
+    .select('customer_id, driver_id, sender, message, created_at, read_at')
     .order('created_at', { ascending: true })
   if (error) throw error
   const byOwner = new Map<string, SupportThread>()
   for (const row of data ?? []) {
     const ownerType: 'customer' | 'driver' = row.driver_id ? 'driver' : 'customer'
     const ownerId = (row.driver_id ?? row.customer_id) as string
-    byOwner.set(`${ownerType}:${ownerId}`, {
+    const key = `${ownerType}:${ownerId}`
+    const prev = byOwner.get(key)
+    byOwner.set(key, {
       ownerId,
       ownerType,
       lastMessage: row.message,
       lastAt: row.created_at,
-      unread: row.sender !== 'admin',
+      // Lit while anything the customer/courier wrote hasn't been opened yet.
+      unread: (prev?.unread ?? false) || (row.sender !== 'admin' && row.read_at == null),
     })
   }
   return Array.from(byOwner.values()).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1))
@@ -509,7 +516,7 @@ export async function fetchSupportMessages(ownerId: string, ownerType: 'customer
   const column = ownerType === 'driver' ? 'driver_id' : 'customer_id'
   const { data, error } = await db
     .from('support_messages')
-    .select('id, customer_id, driver_id, sender, message, created_at')
+    .select('id, customer_id, driver_id, sender, message, created_at, feedback_id, read_at')
     .eq(column, ownerId)
     .order('created_at', { ascending: true })
   if (error) throw error
@@ -520,7 +527,80 @@ export async function fetchSupportMessages(ownerId: string, ownerType: 'customer
     sender: row.sender as 'customer' | 'driver' | 'admin',
     message: row.message,
     createdAt: row.created_at,
+    feedbackId: row.feedback_id ?? null,
+    readAt: row.read_at ?? null,
   }))
+}
+
+/** Marks everything the customer/courier typed in this thread as seen. Review
+ * entries are left alone on purpose: they stay lit until the admin actually
+ * opens the review (see markSupportMessageRead). */
+export async function markSupportThreadRead(ownerId: string, ownerType: 'customer' | 'driver') {
+  const db = assertClient()
+  const column = ownerType === 'driver' ? 'driver_id' : 'customer_id'
+  const { error } = await db
+    .from('support_messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq(column, ownerId)
+    .neq('sender', 'admin')
+    .is('feedback_id', null)
+    .is('read_at', null)
+  if (error) throw error
+}
+
+export async function markSupportMessageRead(messageId: string) {
+  const db = assertClient()
+  const { error } = await db
+    .from('support_messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('id', messageId)
+    .is('read_at', null)
+  if (error) throw error
+}
+
+/** How many customer/courier messages the admin hasn't opened yet — drives the
+ * red dot on the "Поддержка" nav link. */
+export async function countUnreadSupportMessages(): Promise<number> {
+  const db = assertClient()
+  const { count, error } = await db
+    .from('support_messages')
+    .select('id', { count: 'exact', head: true })
+    .neq('sender', 'admin')
+    .is('read_at', null)
+  if (error) throw error
+  return count ?? 0
+}
+
+export interface FeedbackDetail {
+  id: string
+  message: string
+  photoUrls: string[]
+  createdAt: string
+  orderId: string
+  orderNumber: number | null
+  customerName: string | null
+}
+
+export async function fetchFeedbackDetail(feedbackId: string): Promise<FeedbackDetail | null> {
+  const db = assertClient()
+  const { data, error } = await db
+    .from('order_feedback')
+    .select('id, message, photo_urls, created_at, order_id, orders(order_number), customers(name)')
+    .eq('id', feedbackId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const order = Array.isArray(data.orders) ? data.orders[0] : data.orders
+  const customer = Array.isArray(data.customers) ? data.customers[0] : data.customers
+  return {
+    id: data.id,
+    message: data.message,
+    photoUrls: Array.isArray(data.photo_urls) ? data.photo_urls : [],
+    createdAt: data.created_at,
+    orderId: data.order_id,
+    orderNumber: order?.order_number ?? null,
+    customerName: customer?.name ?? null,
+  }
 }
 
 export async function sendSupportMessage(ownerId: string, ownerType: 'customer' | 'driver', message: string) {
