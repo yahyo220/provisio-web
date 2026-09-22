@@ -9,7 +9,7 @@
 //      "Итого" row. Same approach, its own template (weeklyInvoiceTemplate
 //      below) — see downloadWeeklyInvoiceExcel.
 import ExcelJS from 'exceljs'
-import type { CustomerRow, OrderItemRow, OrderRow, ProductRow } from './types'
+import type { CustomerRow, OrderItemRow, OrderRow } from './types'
 import type { OrderLineItem } from './data'
 import { triggerXlsxDownload } from './xlsxShared'
 import orderInvoiceWithPriceTemplateUrl from '../assets/templates/order-invoice-with-price-template.xlsx?url'
@@ -24,14 +24,19 @@ function formatDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-/** Replaces a `[token]` inside a cell's existing text, keeping any literal
- * text around it (e.g. "Организация: [company_name]" → "Организация: X") —
- * both real merge templates in this file mix literal labels and tokens in
- * the same cell. Shared by both downloadOrderExcelWithPrice and
+/** Replaces the one `[token]` inside a cell's existing text with `value`,
+ * keeping whatever literal text surrounds it (e.g. "Организация:
+ * [company_name]" → "Организация: X") — every real merge template in this
+ * file mixes a literal label with exactly one bracketed token per cell.
+ * Matches on the brackets themselves rather than a hardcoded token name —
+ * a token's exact spelling isn't safe to hand-transcribe into source: one
+ * of these templates' "[total_amount]" turned out to spell "amount" with a
+ * Cyrillic а/о, invisible at a glance but silently never matching a
+ * Latin-spelled literal. Shared by both downloadOrderExcelWithPrice and
  * downloadWeeklyInvoiceExcel below. */
-function fillToken(ws: ExcelJS.Worksheet, row: number, col: number, token: string, value: string) {
+function fillToken(ws: ExcelJS.Worksheet, row: number, col: number, value: string) {
   const cell = ws.getCell(row, col)
-  cell.value = String(cell.value ?? '').replace(token, value)
+  cell.value = String(cell.value ?? '').replace(/\[[^\]]*\]/, value)
 }
 
 /** Writes one row of a template by column group, using styles captured
@@ -101,13 +106,13 @@ export async function downloadOrderExcelWithPrice(
   // "Номер накладной" — despite the template naming this token
   // [delivery_number], it's the order's own number: there's no separate
   // "delivery number" this business tracks, and this накладная is per order.
-  fillToken(ws, 2, 1, '[delivery_number]', String(order.orderNumber))
-  fillToken(ws, 3, 1, '[company_name]', 'Freshline')
-  fillToken(ws, 4, 1, '[client_company_name]', customer?.companyName || customer?.name || order.customer)
-  fillToken(ws, 5, 1, '[delivery_date]', formatDate(order.createdAt))
-  fillToken(ws, 6, 1, '[client_position]', customer?.staffRole || '—')
-  fillToken(ws, 7, 1, '[client_name]', customer?.contact || customer?.name || order.customer)
-  fillToken(ws, 8, 1, '[client_tel]', customer?.phone || '—')
+  fillToken(ws, 2, 1, String(order.orderNumber))
+  fillToken(ws, 3, 1, 'Freshline')
+  fillToken(ws, 4, 1, customer?.companyName || customer?.name || order.customer)
+  fillToken(ws, 5, 1, formatDate(order.createdAt))
+  fillToken(ws, 6, 1, customer?.staffRole || '—')
+  fillToken(ws, 7, 1, customer?.contact || customer?.name || order.customer)
+  fillToken(ws, 8, 1, customer?.phone || '—')
 
   // Capture styles from the template's one example line-item row (10) and
   // its totals row (11) before writing anything — every row this export
@@ -149,10 +154,12 @@ export async function downloadOrderExcelWithPrice(
 // `[bracket]` placeholders — the convention of whatever external tool the
 // business used to design накладные. It is never edited: the code below only
 // ever swaps a placeholder's text or overwrites a cell it owns, so the file
-// on disk stays byte-for-byte what was provided. Column layout (16 columns,
-// grouped exactly as below) is shared by the header (row 5), the one
+// on disk stays byte-for-byte what was provided. Column layout — A(№) |
+// B:C(Дата) | D:F(Номер заказа) | G:H(Сумма без ндс) | I:J(НДС) |
+// K:M(Обшая сумма заказа) — is shared by the header (row 5), the one
 // example product row (row 6) and the totals row (row 7).
-const WEEKLY_COLS: [number, number][] = [[1, 1], [2, 3], [4, 6], [7, 9], [10, 11], [12, 13], [14, 16]]
+const WEEKLY_COLS: [number, number][] = [[1, 1], [2, 3], [4, 6], [7, 8], [9, 10], [11, 13]]
+const WEEKLY_TOTAL_COL = WEEKLY_COLS[WEEKLY_COLS.length - 1]
 
 let weeklyTemplateCache: ArrayBuffer | null = null
 async function loadWeeklyTemplate(): Promise<ExcelJS.Workbook> {
@@ -182,17 +189,18 @@ function writeWeeklyProductRow(ws: ExcelJS.Worksheet, row: number, values: (stri
   })
 }
 
-/** Writes the "Итого: N" totals row. Only the N:P group is merged, matching
- * the template's own row 7 (its other columns are plain, unmerged and
- * blank — everything up to column M just gets that same blank style, so a
+/** Writes the "Итого: N" totals row. Only the last column group is merged,
+ * matching the template's own row 7 (its other columns are plain, unmerged
+ * and blank — everything before that just gets that same blank style, so a
  * totals row that lands on a former product-row's line — with orders in
  * range — never shows that row's leftover borders). */
 function writeWeeklyTotalRow(ws: ExcelJS.Worksheet, row: number, grandTotal: number, colStyles: Partial<ExcelJS.Style>[][]) {
   WEEKLY_COLS.forEach(([start, end], i) => {
     for (let col = start; col <= end; col++) ws.getCell(row, col).style = colStyles[i][col - start]
   })
-  ws.mergeCells(row, 14, row, 16)
-  ws.getCell(row, 14).value = `Итого: ${grandTotal.toLocaleString('ru-RU')}`
+  const [start, end] = WEEKLY_TOTAL_COL
+  ws.mergeCells(row, start, row, end)
+  ws.getCell(row, start).value = `Итого: ${grandTotal.toLocaleString('ru-RU')}`
 }
 
 /** Variant 2 — one row per order, for one customer, over a date range.
@@ -203,14 +211,12 @@ export async function downloadWeeklyInvoiceExcel(params: {
   customer: CustomerRow
   orders: OrderRow[]
   orderItems: OrderItemRow[]
-  products: ProductRow[]
   dateFrom: string // yyyy-mm-dd
   dateTo: string // yyyy-mm-dd
 }) {
-  const { customer, orders, orderItems, products, dateFrom, dateTo } = params
+  const { customer, orders, orderItems, dateFrom, dateTo } = params
   const from = new Date(`${dateFrom}T00:00:00`)
   const to = new Date(`${dateTo}T23:59:59`)
-  const productById = new Map(products.map((p) => [p.id, p]))
 
   const relevant = orders
     .filter((o) => o.customerId === customer.id)
@@ -228,9 +234,16 @@ export async function downloadWeeklyInvoiceExcel(params: {
   ws.getCell(1, 1).value = null
   ws.getCell(8, 1).value = null
 
-  fillToken(ws, 2, 1, '[company_name]', 'Freshline')
-  fillToken(ws, 3, 1, '[client_company_name]', customer.companyName || customer.name)
-  fillToken(ws, 4, 1, '[date]', `${formatDate(dateFrom)} — ${formatDate(dateTo)}`)
+  fillToken(ws, 2, 1, 'Freshline')
+  fillToken(ws, 3, 1, customer.companyName || customer.name)
+  fillToken(ws, 4, 1, `${formatDate(dateFrom)} — ${formatDate(dateTo)}`)
+
+  // "Номер заказа" (row 6, column group D:F) carries a literal prefix ahead
+  // of its [order_number] token — e.g. "№000[order_number]" — read off
+  // whatever that prefix actually is rather than hand-transcribing it: it's
+  // set with a Unicode "№" (numero sign), easy to mistype as a plain "N".
+  const orderNoColStart = WEEKLY_COLS[2][0]
+  const orderNoPrefix = String(ws.getCell(6, orderNoColStart).value ?? '').replace(/\[[^\]]*\]/, '')
 
   // Capture every column's style from the template's one example product row
   // (6) and totals row (7) before writing anything — every row this export
@@ -252,7 +265,7 @@ export async function downloadWeeklyInvoiceExcel(params: {
   // rewritten below, potentially across more or fewer rows than the
   // template shipped with, so clear that band's merges first or re-merging
   // it would collide with a leftover merge definition.
-  ws.unMergeCells(6, 1, 200, 16)
+  ws.unMergeCells(6, 1, 200, 13)
   // Rows 6–8 held the template's one example product row, its totals row,
   // and the closing </order> tag — all three get fully rewritten below
   // (rows 6 alone when there are zero orders in range), so wipe every value
@@ -260,14 +273,13 @@ export async function downloadWeeklyInvoiceExcel(params: {
   // rows for, a leftover "[order_date]"-style placeholder or stray "Итого"
   // text would survive untouched past wherever this export stops writing.
   for (let row = 6; row <= 8; row++) {
-    for (let col = 1; col <= 16; col++) ws.getCell(row, col).value = null
+    for (let col = 1; col <= 13; col++) ws.getCell(row, col).value = null
   }
 
   let grandTotal = 0
   relevant.forEach((order, i) => {
     const row = 6 + i
     const items = orderItems.filter((oi) => oi.orderId === order.id)
-    const units = [...new Set(items.map((oi) => productById.get(oi.productId ?? '')?.unit).filter(Boolean))].join(', ') || '—'
     const subtotal = items.reduce((s, oi) => s + oi.qty * oi.unitPrice, 0)
     const vat = Math.round(subtotal * VAT_RATE)
     // sum_without_vat + vat_sum = total_sum, matching what the sheet's own
@@ -279,7 +291,7 @@ export async function downloadWeeklyInvoiceExcel(params: {
     writeWeeklyProductRow(
       ws,
       row,
-      [i + 1, formatDate(order.createdAt), order.orderNumber, units, subtotal, vat, orderTotal],
+      [i + 1, formatDate(order.createdAt), `${orderNoPrefix}${order.orderNumber}`, subtotal, vat, orderTotal],
       productColStyles,
     )
   })

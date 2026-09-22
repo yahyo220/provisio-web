@@ -68,7 +68,7 @@ export default function Analytics() {
     setWeeklyError(null)
     setDownloadingWeekly(true)
     try {
-      const count = await downloadWeeklyInvoiceExcel({ customer, orders, orderItems, products, dateFrom, dateTo })
+      const count = await downloadWeeklyInvoiceExcel({ customer, orders, orderItems, dateFrom, dateTo })
       if (count === 0) setWeeklyError(t('analytics.invoices.noOrdersInRange'))
     } catch (err) {
       console.error(err)
