@@ -37,6 +37,20 @@ function resolveUnit(raw: string): string | null {
   return UNIT_BY_KEY.get(v) ?? UNIT_BY_RU.get(v) ?? null
 }
 
+/** A price/price-external cell's value, robustly. `downloadPriceListExcel`
+ * always writes a clean number, but a re-uploaded file has usually been
+ * hand-edited in Excel — retyping "20000" as "20 000" (a thousands
+ * separator, sometimes a non-breaking space) turns the cell into text, and
+ * `Number("20 000")` is `NaN`, not 20000. Strip everything but digits/dot
+ * first, the same way the legacy CSV importer below already did — a plain
+ * `Number(cell.value)` silently dropped every row someone had actually
+ * retyped a price in, which is what made this import look like it had
+ * stopped updating prices at all. */
+function parseMoneyCell(raw: unknown): number {
+  if (typeof raw === 'number') return raw
+  return Number(String(raw ?? '').replace(/[^\d.]/g, ''))
+}
+
 export async function downloadPriceListExcel(products: ProductRow[]) {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Товары')
@@ -105,9 +119,9 @@ export async function parsePriceFile(file: File): Promise<ProductImportRow[]> {
     const name = String(row.getCell(2).value ?? '').trim()
     const category = resolveCategory(String(row.getCell(3).value ?? ''))
     const unit = resolveUnit(String(row.getCell(4).value ?? ''))
-    const price = Number(row.getCell(5).value)
+    const price = parseMoneyCell(row.getCell(5).value)
     const priceExternalRaw = row.getCell(6).value
-    const priceExternal = priceExternalRaw === null || priceExternalRaw === undefined || priceExternalRaw === '' ? null : Number(priceExternalRaw)
+    const priceExternal = priceExternalRaw === null || priceExternalRaw === undefined || priceExternalRaw === '' ? null : parseMoneyCell(priceExternalRaw)
     // A row needs at least a SKU (to update something that already exists)
     // or a name (to be worth creating) — anything with neither is just a
     // blank spreadsheet row and is silently skipped, not reported as an error.
