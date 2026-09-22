@@ -412,7 +412,10 @@ export async function downloadOrderExcelWithMargin(
     const sumWithoutVat = Math.round(line.qty * line.unitPrice)
     const vatAmount = Math.round(sumWithoutVat * VAT_RATE)
     const marginAmount = Math.round(sumWithoutVat * MARGIN_RATE)
-    const lineTotal = sumWithoutVat + vatAmount
+    // total_sum = sum_without_vat + vat_sum + margin_amount, straight from
+    // the template's own token — unlike the plain price накладная, "Сумма"
+    // here is marked up by margin too, not just base + VAT.
+    const lineTotal = sumWithoutVat + vatAmount + marginAmount
     grandTotal += lineTotal
     grandProfit += marginAmount
 
@@ -503,7 +506,10 @@ export async function downloadWeeklyInvoiceWithMarginExcel(params: {
     const subtotal = items.reduce((s, oi) => s + oi.qty * oi.unitPrice, 0)
     const vat = Math.round(subtotal * VAT_RATE)
     const marginAmount = Math.round(subtotal * MARGIN_RATE)
-    const orderTotal = subtotal + vat
+    // total_sum = sum_without_vat + vat_sum + margin_amount, straight from
+    // the template's own token — unlike the plain weekly накладная,
+    // "Обшая сумма заказа" here is marked up by margin too.
+    const orderTotal = subtotal + vat + marginAmount
     grandTotal += orderTotal
     grandProfit += marginAmount
 
