@@ -155,10 +155,10 @@ export async function downloadOrderExcelWithPrice(
 // business used to design накладные. It is never edited: the code below only
 // ever swaps a placeholder's text or overwrites a cell it owns, so the file
 // on disk stays byte-for-byte what was provided. Column layout — A(№) |
-// B:C(Дата) | D:F(Номер заказа) | G:H(Сумма без ндс) | I:J(НДС) |
-// K:M(Обшая сумма заказа) — is shared by the header (row 5), the one
+// B:C(Дата) | D(Номер заказа) | E:F(Сумма без ндс) | G:H(НДС) |
+// I:K(Обшая сумма заказа) — is shared by the header (row 5), the one
 // example product row (row 6) and the totals row (row 7).
-const WEEKLY_COLS: [number, number][] = [[1, 1], [2, 3], [4, 6], [7, 8], [9, 10], [11, 13]]
+const WEEKLY_COLS: [number, number][] = [[1, 1], [2, 3], [4, 4], [5, 6], [7, 8], [9, 11]]
 const WEEKLY_TOTAL_COL = WEEKLY_COLS[WEEKLY_COLS.length - 1]
 
 let weeklyTemplateCache: ArrayBuffer | null = null
@@ -238,10 +238,11 @@ export async function downloadWeeklyInvoiceExcel(params: {
   fillToken(ws, 3, 1, customer.companyName || customer.name)
   fillToken(ws, 4, 1, `${formatDate(dateFrom)} — ${formatDate(dateTo)}`)
 
-  // "Номер заказа" (row 6, column group D:F) carries a literal prefix ahead
-  // of its [order_number] token — e.g. "№000[order_number]" — read off
-  // whatever that prefix actually is rather than hand-transcribing it: it's
-  // set with a Unicode "№" (numero sign), easy to mistype as a plain "N".
+  // "Номер заказа" (row 6, column D) has carried a literal prefix ahead of
+  // its [order_number] token in some revisions of this template — e.g.
+  // "№000[order_number]" (a Unicode "№", easy to mistype as a plain "N") —
+  // and none in others. Read off whatever's actually there instead of
+  // hand-transcribing a prefix that may or may not exist this time.
   const orderNoColStart = WEEKLY_COLS[2][0]
   const orderNoPrefix = String(ws.getCell(6, orderNoColStart).value ?? '').replace(/\[[^\]]*\]/, '')
 
@@ -265,7 +266,7 @@ export async function downloadWeeklyInvoiceExcel(params: {
   // rewritten below, potentially across more or fewer rows than the
   // template shipped with, so clear that band's merges first or re-merging
   // it would collide with a leftover merge definition.
-  ws.unMergeCells(6, 1, 200, 13)
+  ws.unMergeCells(6, 1, 200, 11)
   // Rows 6–8 held the template's one example product row, its totals row,
   // and the closing </order> tag — all three get fully rewritten below
   // (rows 6 alone when there are zero orders in range), so wipe every value
@@ -273,7 +274,7 @@ export async function downloadWeeklyInvoiceExcel(params: {
   // rows for, a leftover "[order_date]"-style placeholder or stray "Итого"
   // text would survive untouched past wherever this export stops writing.
   for (let row = 6; row <= 8; row++) {
-    for (let col = 1; col <= 13; col++) ws.getCell(row, col).value = null
+    for (let col = 1; col <= 11; col++) ws.getCell(row, col).value = null
   }
 
   let grandTotal = 0
