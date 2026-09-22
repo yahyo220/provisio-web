@@ -21,10 +21,37 @@ import type { OrderLineItem } from './data'
 import { triggerXlsxDownload } from './xlsxShared'
 import orderInvoiceWithPriceTemplateUrl from '../assets/templates/order-invoice-with-price-template.xlsx?url'
 import weeklyInvoiceTemplateUrl from '../assets/templates/weekly-invoice-template.xlsx?url'
+import orderInvoiceMarginTemplateUrl from '../assets/templates/order-invoice-margin-template.xlsx?url'
+import weeklyInvoiceMarginTemplateUrl from '../assets/templates/weekly-invoice-margin-template.xlsx?url'
 
 // Matches the app's own CartController.kVatRate (lib/state/cart_controller.dart) —
 // keep the two in sync if this ever changes.
 export const VAT_RATE = 0.12
+
+// The business has no purchase-cost data on products to compute a real
+// margin from (only a customer-facing "external" price tier, unrelated to
+// what anything cost to acquire) — confirmed with the user directly. Until
+// that exists, every product's margin/profit is a flat 12% of its pre-VAT
+// price. Shares its numeric value with VAT_RATE by coincidence only; keep
+// them as separate constants so a future change to either doesn't
+// accidentally move the other.
+export const MARGIN_RATE = 0.12
+
+/** This customer's orders whose createdAt falls within [dateFrom, dateTo]
+ * (inclusive, local-day boundaries), oldest first — the shared row set both
+ * downloadWeeklyInvoiceExcel and downloadWeeklyInvoiceWithMarginExcel below
+ * write one row per order for. */
+function ordersInRange(orders: OrderRow[], customerId: string, dateFrom: string, dateTo: string): OrderRow[] {
+  const from = new Date(`${dateFrom}T00:00:00`)
+  const to = new Date(`${dateTo}T23:59:59`)
+  return orders
+    .filter((o) => o.customerId === customerId)
+    .filter((o) => {
+      const d = new Date(o.createdAt)
+      return d >= from && d <= to
+    })
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+}
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -74,20 +101,29 @@ function captureTemplateColStyles(ws: ExcelJS.Worksheet, row: number, cols: [num
   })
 }
 
-/** Writes a totals row: applies the captured (blank, in both templates)
- * style to every column group first — so a totals row landing on a former
- * line-item row's line never shows that row's leftover borders — then
- * merges and fills only the last group with `text`. Shared by
- * downloadOrderExcelWithPrice and downloadWeeklyInvoiceExcel: both
- * templates fold their whole "Итого"/total label plus amount into that one
- * trailing cell, leaving every column before it blank. */
-function writeTotalRow(ws: ExcelJS.Worksheet, row: number, cols: [number, number][], text: string, colStyles: Partial<ExcelJS.Style>[][]) {
+/** Writes a totals row: applies the captured (blank, in every template so
+ * far) style to every column group first — so a totals row landing on a
+ * former line-item row's line never shows that row's leftover borders —
+ * then merges and fills just the named groups with their text, leaving the
+ * rest blank. The price/weekly templates fold one "Итого"/total label plus
+ * amount into a single trailing cell (one entry); the margin variants below
+ * have two separate totals (Сумма and Прибыль, at different column groups)
+ * on the same row, hence a list rather than one fixed trailing value. */
+function writeTotalRow(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  cols: [number, number][],
+  colStyles: Partial<ExcelJS.Style>[][],
+  entries: { index: number; text: string }[],
+) {
   cols.forEach(([start, end], i) => {
     for (let col = start; col <= end; col++) ws.getCell(row, col).style = colStyles[i][col - start]
   })
-  const [start, end] = cols[cols.length - 1]
-  ws.mergeCells(row, start, row, end)
-  ws.getCell(row, start).value = text
+  for (const { index, text } of entries) {
+    const [start, end] = cols[index]
+    if (end > start) ws.mergeCells(row, start, row, end)
+    ws.getCell(row, start).value = text
+  }
 }
 
 // The real merge template (order-invoice-with-price-template.xlsx, embedded
@@ -176,7 +212,9 @@ export async function downloadOrderExcelWithPrice(
     writeTemplateRow(ws, row, PRICE_PRODUCT_COLS, [i + 1, line.name, line.category, line.qty, sumWithoutVat, vatAmount, lineTotal], productColStyles)
   })
 
-  writeTotalRow(ws, 10 + lineItems.length, PRICE_PRODUCT_COLS, `${totalPrefix}${grandTotal.toLocaleString('ru-RU')}`, totalColStyles)
+  writeTotalRow(ws, 10 + lineItems.length, PRICE_PRODUCT_COLS, totalColStyles, [
+    { index: PRICE_PRODUCT_COLS.length - 1, text: `${totalPrefix}${grandTotal.toLocaleString('ru-RU')}` },
+  ])
 
   await triggerXlsxDownload(wb, `Накладная №${order.orderNumber} (с ценой).xlsx`)
 }
@@ -217,16 +255,7 @@ export async function downloadWeeklyInvoiceExcel(params: {
   dateTo: string // yyyy-mm-dd
 }) {
   const { customer, orders, orderItems, dateFrom, dateTo } = params
-  const from = new Date(`${dateFrom}T00:00:00`)
-  const to = new Date(`${dateTo}T23:59:59`)
-
-  const relevant = orders
-    .filter((o) => o.customerId === customer.id)
-    .filter((o) => {
-      const d = new Date(o.createdAt)
-      return d >= from && d <= to
-    })
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  const relevant = ordersInRange(orders, customer.id, dateFrom, dateTo)
 
   const wb = await loadWeeklyTemplate()
   const ws = wb.worksheets[0]
@@ -297,11 +326,204 @@ export async function downloadWeeklyInvoiceExcel(params: {
     )
   })
 
-  writeTotalRow(ws, 6 + relevant.length, WEEKLY_COLS, `${totalPrefix}${grandTotal.toLocaleString('ru-RU')}`, totalColStyles)
+  writeTotalRow(ws, 6 + relevant.length, WEEKLY_COLS, totalColStyles, [
+    { index: WEEKLY_COLS.length - 1, text: `${totalPrefix}${grandTotal.toLocaleString('ru-RU')}` },
+  ])
 
   await triggerXlsxDownload(
     wb,
     `Накладная ${customer.name} ${formatDate(dateFrom)}-${formatDate(dateTo)}.xlsx`,
+  )
+
+  return relevant.length
+}
+
+// ---------------------------------------------------------------------------
+// Internal ("для нас") variants — same idea as the two customer-facing
+// exports above, but for the business's own eyes: everything those show,
+// plus Маржа (this order/line's margin) and Прибыль (running profit, with
+// its own "Итого" total). Never meant to leave the company, so they're
+// reachable only from their own "для нас" controls, not next to the
+// customer-facing download buttons.
+// ---------------------------------------------------------------------------
+
+// The real merge template (order-invoice-margin-template.xlsx, embedded
+// unmodified under src/assets/templates/) — same row layout as the plain
+// price template (header rows 2-8, column headers row 9, one example
+// line-item row 10, totals row 11) with two columns inserted: Маржа right
+// after НДС, Прибыль right after Сумма. Column layout — A(№) | B(Название) |
+// C(Категория) | D(Кол-во) | E(Сумма без НДС) | F(НДС) | G:H(Маржа) |
+// I:J(Сумма) | K:L(Прибыль). The totals row only fills the Сумма and
+// Прибыль groups (indices 7 and 8) — Маржа has no running total here, only
+// per line.
+const MARGIN_ORDER_COLS: [number, number][] = [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6], [7, 8], [9, 10], [11, 12]]
+const MARGIN_ORDER_SUM_INDEX = 7
+const MARGIN_ORDER_PROFIT_INDEX = 8
+
+let orderMarginTemplateCache: ArrayBuffer | null = null
+async function loadOrderMarginTemplate(): Promise<ExcelJS.Workbook> {
+  if (!orderMarginTemplateCache) {
+    const res = await fetch(orderInvoiceMarginTemplateUrl)
+    orderMarginTemplateCache = await res.arrayBuffer()
+  }
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(orderMarginTemplateCache.slice(0))
+  return wb
+}
+
+/** Internal variant of downloadOrderExcelWithPrice — same order, same
+ * header fields, but with Маржа/Прибыль columns (see MARGIN_ORDER_COLS). */
+export async function downloadOrderExcelWithMargin(
+  order: OrderRow,
+  customer: CustomerRow | undefined,
+  lineItems: OrderLineItem[],
+) {
+  const wb = await loadOrderMarginTemplate()
+  const ws = wb.worksheets[0]
+
+  ws.getCell(1, 1).value = null
+  ws.getCell(12, 1).value = null
+
+  fillToken(ws, 2, 1, String(order.orderNumber))
+  fillToken(ws, 3, 1, 'Freshline')
+  fillToken(ws, 4, 1, customer?.companyName || customer?.name || order.customer)
+  fillToken(ws, 5, 1, formatDate(order.createdAt))
+  fillToken(ws, 6, 1, customer?.staffRole || '—')
+  fillToken(ws, 7, 1, customer?.contact || customer?.name || order.customer)
+  fillToken(ws, 8, 1, customer?.phone || '—')
+
+  const [sumColStart] = MARGIN_ORDER_COLS[MARGIN_ORDER_SUM_INDEX]
+  const [profitColStart] = MARGIN_ORDER_COLS[MARGIN_ORDER_PROFIT_INDEX]
+  const sumPrefix = String(ws.getCell(11, sumColStart).value ?? '').replace(/\[[^\]]*\]/, '')
+  const profitPrefix = String(ws.getCell(11, profitColStart).value ?? '').replace(/\[[^\]]*\]/, '')
+
+  const productColStyles = captureTemplateColStyles(ws, 10, MARGIN_ORDER_COLS)
+  const totalColStyles = captureTemplateColStyles(ws, 11, MARGIN_ORDER_COLS)
+
+  ws.unMergeCells(10, 1, 500, 12)
+  for (let row = 10; row <= 12; row++) {
+    for (let col = 1; col <= 12; col++) ws.getCell(row, col).value = null
+  }
+
+  let grandTotal = 0
+  let grandProfit = 0
+  lineItems.forEach((line, i) => {
+    const row = 10 + i
+    const sumWithoutVat = Math.round(line.qty * line.unitPrice)
+    const vatAmount = Math.round(sumWithoutVat * VAT_RATE)
+    const marginAmount = Math.round(sumWithoutVat * MARGIN_RATE)
+    const lineTotal = sumWithoutVat + vatAmount
+    grandTotal += lineTotal
+    grandProfit += marginAmount
+
+    writeTemplateRow(
+      ws,
+      row,
+      MARGIN_ORDER_COLS,
+      [i + 1, line.name, line.category, line.qty, sumWithoutVat, vatAmount, marginAmount, lineTotal, marginAmount],
+      productColStyles,
+    )
+  })
+
+  writeTotalRow(ws, 10 + lineItems.length, MARGIN_ORDER_COLS, totalColStyles, [
+    { index: MARGIN_ORDER_SUM_INDEX, text: `${sumPrefix}${grandTotal.toLocaleString('ru-RU')}` },
+    { index: MARGIN_ORDER_PROFIT_INDEX, text: `${profitPrefix}${grandProfit.toLocaleString('ru-RU')}` },
+  ])
+
+  await triggerXlsxDownload(wb, `Накладная №${order.orderNumber} (для нас).xlsx`)
+}
+
+// The real merge template (weekly-invoice-margin-template.xlsx, embedded
+// unmodified under src/assets/templates/) — same row layout as the plain
+// weekly template, with Маржа inserted after НДС and Прибыль appended after
+// Обшая сумма заказа. Column layout — A(№) | B:C(Дата) | D:E(Номер заказа) |
+// F:G(Сумма без ндс) | H:I(НДС) | J:K(Маржа) | L:N(Обшая сумма заказа) |
+// O:P(Прибыль). The totals row only fills Обшая сумма заказа and Прибыль
+// (indices 6 and 7) — Маржа has no running total, only per order.
+const MARGIN_WEEKLY_COLS: [number, number][] = [[1, 1], [2, 3], [4, 5], [6, 7], [8, 9], [10, 11], [12, 14], [15, 16]]
+const MARGIN_WEEKLY_SUM_INDEX = 6
+const MARGIN_WEEKLY_PROFIT_INDEX = 7
+
+let weeklyMarginTemplateCache: ArrayBuffer | null = null
+async function loadWeeklyMarginTemplate(): Promise<ExcelJS.Workbook> {
+  if (!weeklyMarginTemplateCache) {
+    const res = await fetch(weeklyInvoiceMarginTemplateUrl)
+    weeklyMarginTemplateCache = await res.arrayBuffer()
+  }
+  const wb = new ExcelJS.Workbook()
+  await wb.xlsx.load(weeklyMarginTemplateCache.slice(0))
+  return wb
+}
+
+/** Internal variant of downloadWeeklyInvoiceExcel — same one-row-per-order
+ * period summary, plus Маржа/Прибыль columns (see MARGIN_WEEKLY_COLS). Same
+ * params/return shape as downloadWeeklyInvoiceExcel so a caller can offer
+ * both off the same customer/date-range picker. */
+export async function downloadWeeklyInvoiceWithMarginExcel(params: {
+  customer: CustomerRow
+  orders: OrderRow[]
+  orderItems: OrderItemRow[]
+  dateFrom: string // yyyy-mm-dd
+  dateTo: string // yyyy-mm-dd
+}) {
+  const { customer, orders, orderItems, dateFrom, dateTo } = params
+  const relevant = ordersInRange(orders, customer.id, dateFrom, dateTo)
+
+  const wb = await loadWeeklyMarginTemplate()
+  const ws = wb.worksheets[0]
+
+  ws.getCell(1, 1).value = null
+  ws.getCell(8, 1).value = null
+
+  fillToken(ws, 2, 1, 'Freshline')
+  fillToken(ws, 3, 1, customer.companyName || customer.name)
+  fillToken(ws, 4, 1, `${formatDate(dateFrom)} — ${formatDate(dateTo)}`)
+
+  const [orderNoColStart] = MARGIN_WEEKLY_COLS[2]
+  const orderNoPrefix = String(ws.getCell(6, orderNoColStart).value ?? '').replace(/\[[^\]]*\]/, '')
+  const [sumColStart] = MARGIN_WEEKLY_COLS[MARGIN_WEEKLY_SUM_INDEX]
+  const [profitColStart] = MARGIN_WEEKLY_COLS[MARGIN_WEEKLY_PROFIT_INDEX]
+  const sumPrefix = String(ws.getCell(7, sumColStart).value ?? '').replace(/\[[^\]]*\]/, '')
+  const profitPrefix = String(ws.getCell(7, profitColStart).value ?? '').replace(/\[[^\]]*\]/, '')
+
+  const productColStyles = captureTemplateColStyles(ws, 6, MARGIN_WEEKLY_COLS)
+  const totalColStyles = captureTemplateColStyles(ws, 7, MARGIN_WEEKLY_COLS)
+
+  const lastCol = MARGIN_WEEKLY_COLS[MARGIN_WEEKLY_COLS.length - 1][1]
+  ws.unMergeCells(6, 1, 200, lastCol)
+  for (let row = 6; row <= 8; row++) {
+    for (let col = 1; col <= lastCol; col++) ws.getCell(row, col).value = null
+  }
+
+  let grandTotal = 0
+  let grandProfit = 0
+  relevant.forEach((order, i) => {
+    const row = 6 + i
+    const items = orderItems.filter((oi) => oi.orderId === order.id)
+    const subtotal = items.reduce((s, oi) => s + oi.qty * oi.unitPrice, 0)
+    const vat = Math.round(subtotal * VAT_RATE)
+    const marginAmount = Math.round(subtotal * MARGIN_RATE)
+    const orderTotal = subtotal + vat
+    grandTotal += orderTotal
+    grandProfit += marginAmount
+
+    writeTemplateRow(
+      ws,
+      row,
+      MARGIN_WEEKLY_COLS,
+      [i + 1, formatDate(order.createdAt), `${orderNoPrefix}${order.orderNumber}`, subtotal, vat, marginAmount, orderTotal, marginAmount],
+      productColStyles,
+    )
+  })
+
+  writeTotalRow(ws, 6 + relevant.length, MARGIN_WEEKLY_COLS, totalColStyles, [
+    { index: MARGIN_WEEKLY_SUM_INDEX, text: `${sumPrefix}${grandTotal.toLocaleString('ru-RU')}` },
+    { index: MARGIN_WEEKLY_PROFIT_INDEX, text: `${profitPrefix}${grandProfit.toLocaleString('ru-RU')}` },
+  ])
+
+  await triggerXlsxDownload(
+    wb,
+    `Накладная для нас ${customer.name} ${formatDate(dateFrom)}-${formatDate(dateTo)}.xlsx`,
   )
 
   return relevant.length

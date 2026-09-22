@@ -372,6 +372,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'analytics.invoices.from': 'From',
     'analytics.invoices.to': 'To',
     'analytics.invoices.noOrdersInRange': 'This customer has no orders in that period.',
+    'analytics.invoices.forUs': 'For us',
+    'analytics.invoices.forUsHint': 'Internal only — shows margin and profit. Never share this with a customer.',
+    'analytics.invoices.modeCustomer': 'Customer',
+    'analytics.invoices.modeInternal': 'For us',
   },
   ru: {
     'nav.dashboard': 'Дашборд',
@@ -651,5 +655,9 @@ export const translations: Record<Lang, Record<string, string>> = {
     'analytics.invoices.from': 'С',
     'analytics.invoices.to': 'По',
     'analytics.invoices.noOrdersInRange': 'У этого клиента нет заказов за выбранный период.',
+    'analytics.invoices.forUs': 'Для нас',
+    'analytics.invoices.forUsHint': 'Только для нас — с маржой и прибылью. Никогда не отправляйте это клиенту.',
+    'analytics.invoices.modeCustomer': 'Клиенту',
+    'analytics.invoices.modeInternal': 'Для нас',
   },
 }

@@ -6,7 +6,12 @@ import Card from '../components/ui/Card'
 import RevenueChart from '../components/ui/RevenueChart'
 import { useLanguage } from '../i18n/LanguageContext'
 import { fetchOrderItems } from '../lib/api'
-import { downloadOrderExcelWithPrice, downloadWeeklyInvoiceExcel } from '../lib/exportInvoices'
+import {
+  downloadOrderExcelWithMargin,
+  downloadOrderExcelWithPrice,
+  downloadWeeklyInvoiceExcel,
+  downloadWeeklyInvoiceWithMarginExcel,
+} from '../lib/exportInvoices'
 import {
   computeAnalyticsKpis,
   computeCategoryBreakdown,
@@ -39,26 +44,31 @@ export default function Analytics() {
     [orders],
   )
   const [invoiceOrderId, setInvoiceOrderId] = useState('')
-  const [downloadingOrderInvoice, setDownloadingOrderInvoice] = useState(false)
+  const [downloadingOrderInvoice, setDownloadingOrderInvoice] = useState<'customer' | 'internal' | null>(null)
 
   const [invoiceCustomerId, setInvoiceCustomerId] = useState('')
   const [dateFrom, setDateFrom] = useState(daysAgoIso(7))
   const [dateTo, setDateTo] = useState(todayIso())
+  const [weeklyMode, setWeeklyMode] = useState<'customer' | 'internal'>('customer')
   const [downloadingWeekly, setDownloadingWeekly] = useState(false)
   const [weeklyError, setWeeklyError] = useState<string | null>(null)
 
-  async function handleDownloadOrderInvoice() {
+  // `variant: 'customer'` is the накладная a client actually receives;
+  // `'internal'` additionally shows Маржа/Прибыль and is only ever meant
+  // for the business's own eyes — see downloadOrderExcelWithMargin.
+  async function handleDownloadOrderInvoice(variant: 'customer' | 'internal') {
     const order = orders.find((o) => o.id === invoiceOrderId)
     if (!order) return
-    setDownloadingOrderInvoice(true)
+    setDownloadingOrderInvoice(variant)
     try {
       const customer = customers.find((c) => c.id === order.customerId)
       const lineItems = await fetchOrderItems(order.id)
-      await downloadOrderExcelWithPrice(order, customer, lineItems)
+      if (variant === 'internal') await downloadOrderExcelWithMargin(order, customer, lineItems)
+      else await downloadOrderExcelWithPrice(order, customer, lineItems)
     } catch (err) {
       console.error(err)
     } finally {
-      setDownloadingOrderInvoice(false)
+      setDownloadingOrderInvoice(null)
     }
   }
 
@@ -68,7 +78,8 @@ export default function Analytics() {
     setWeeklyError(null)
     setDownloadingWeekly(true)
     try {
-      const count = await downloadWeeklyInvoiceExcel({ customer, orders, orderItems, dateFrom, dateTo })
+      const download = weeklyMode === 'internal' ? downloadWeeklyInvoiceWithMarginExcel : downloadWeeklyInvoiceExcel
+      const count = await download({ customer, orders, orderItems, dateFrom, dateTo })
       if (count === 0) setWeeklyError(t('analytics.invoices.noOrdersInRange'))
     } catch (err) {
       console.error(err)
@@ -270,21 +281,57 @@ export default function Analytics() {
                 </select>
               </div>
             </div>
-            <Button
-              variant="primary"
-              icon={<Download />}
-              disabled={!invoiceOrderId || downloadingOrderInvoice}
-              onClick={handleDownloadOrderInvoice}
-              style={{ marginTop: 12 }}
-            >
-              {downloadingOrderInvoice ? '…' : t('analytics.invoices.download')}
-            </Button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+              <Button
+                variant="primary"
+                icon={<Download />}
+                disabled={!invoiceOrderId || downloadingOrderInvoice !== null}
+                onClick={() => handleDownloadOrderInvoice('customer')}
+              >
+                {downloadingOrderInvoice === 'customer' ? '…' : t('analytics.invoices.download')}
+              </Button>
+              <Button
+                variant="ghost"
+                icon={<Download />}
+                disabled={!invoiceOrderId || downloadingOrderInvoice !== null}
+                onClick={() => handleDownloadOrderInvoice('internal')}
+                title={t('analytics.invoices.forUsHint')}
+              >
+                {downloadingOrderInvoice === 'internal' ? '…' : t('analytics.invoices.forUs')}
+              </Button>
+            </div>
           </div>
 
           <div>
-            <p className="sub" style={{ marginBottom: 12 }}>
-              {t('analytics.invoices.weekly')}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
+              <p className="sub" style={{ margin: 0 }}>
+                {t('analytics.invoices.weekly')}
+              </p>
+              {/* "Для нас" reuses this same customer/date-range picker and just
+                  swaps which template gets filled in — see downloadWeeklyInvoiceWithMarginExcel.
+                  Internal-only (margin/profit), so it's never the default. */}
+              <div className="range-pills" role="tablist" aria-label={t('analytics.invoices.title')}>
+                <button
+                  type="button"
+                  className="range-pill"
+                  role="tab"
+                  aria-selected={weeklyMode === 'customer'}
+                  onClick={() => setWeeklyMode('customer')}
+                >
+                  {t('analytics.invoices.modeCustomer')}
+                </button>
+                <button
+                  type="button"
+                  className="range-pill"
+                  role="tab"
+                  aria-selected={weeklyMode === 'internal'}
+                  onClick={() => setWeeklyMode('internal')}
+                  title={t('analytics.invoices.forUsHint')}
+                >
+                  {t('analytics.invoices.modeInternal')}
+                </button>
+              </div>
+            </div>
             <div className="field">
               <div className="select-wrap">
                 <select value={invoiceCustomerId} onChange={(e) => setInvoiceCustomerId(e.target.value)}>
