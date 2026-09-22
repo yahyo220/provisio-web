@@ -36,7 +36,7 @@ const PRICE_TIER_LABEL: Record<CustomerRow['priceTier'], string> = {
 }
 
 function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
-  const { orders, updateCustomer } = useData()
+  const { orders, customers, updateCustomer } = useData()
   const { t, customerType } = useLanguage()
 
   const [name, setName] = useState(customer.name)
@@ -44,7 +44,15 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const [location, setLocation] = useState(customer.location)
   const [type, setType] = useState(customer.type)
   const [active, setActive] = useState(customer.status === 'active')
-  const [priceTier, setPriceTier] = useState(customer.priceTier)
+  // "Руководитель" is the one staff_role that should see prices — pre-select
+  // it for a still-pending signup so the common case needs no extra click,
+  // without taking the choice away from the admin (still just the same
+  // select, still saved by the same "Одобрить" click).
+  const [priceTier, setPriceTier] = useState(
+    customer.approvalStatus !== 'approved' && customer.staffRole === 'Руководитель' && customer.priceTier === 'no_price'
+      ? 'with_price'
+      : customer.priceTier,
+  )
   const [saved, setSaved] = useState(false)
   const [approving, setApproving] = useState(false)
   const [bankTransferEnabled, setBankTransferEnabled] = useState(customer.bankTransferEnabled)
@@ -53,8 +61,41 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const [cashBusy, setCashBusy] = useState(false)
   const [loginLockedAt, setLoginLockedAt] = useState(customer.loginLockedAt)
   const [unlocking, setUnlocking] = useState(false)
+  const [linkTargetId, setLinkTargetId] = useState('')
+  const [linking, setLinking] = useState(false)
+  const [unlinking, setUnlinking] = useState(false)
 
   const customerOrders = orders.filter((o) => o.customerId === customer.id)
+  const parent = customer.parentCustomerId ? customers.find((c) => c.id === customer.parentCustomerId) : undefined
+  const staff = customers.filter((c) => c.parentCustomerId === customer.id)
+  // Only other standalone clients can be link targets — keeps this a single
+  // level (no linking a client that itself already has staff, or one that's
+  // already someone else's staff).
+  const linkable = customers.filter((c) => c.id !== customer.id && !c.parentCustomerId && staff.every((s) => s.id !== c.id))
+
+  async function handleLink() {
+    if (!linkTargetId) return
+    setLinking(true)
+    try {
+      await updateCustomer(customer.id, {
+        parentCustomerId: linkTargetId,
+        approvalStatus: 'approved',
+        priceTier: customer.staffRole === 'Руководитель' ? 'with_price' : customer.priceTier,
+      })
+      setLinkTargetId('')
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  async function handleUnlink() {
+    setUnlinking(true)
+    try {
+      await updateCustomer(customer.id, { parentCustomerId: null })
+    } finally {
+      setUnlinking(false)
+    }
+  }
 
   function handleSave() {
     updateCustomer(customer.id, { name, contact, location, type, status: active ? 'active' : 'inactive', priceTier })
@@ -141,6 +182,32 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
         </div>
       )}
 
+      {parent && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            background: 'var(--gesso-surface-recessed, rgba(0,0,0,0.04))',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '12px 16px',
+            fontSize: 14,
+          }}
+        >
+          <span>
+            Сотрудник клиента{' '}
+            <Link to={`/customers/${parent.id}`} style={{ fontWeight: 700, color: 'var(--gesso-accent)' }}>
+              {parent.name}
+            </Link>
+            {customer.staffRole ? ` · ${customer.staffRole}` : ''}
+          </span>
+          <Button variant="ghost" onClick={handleUnlink} disabled={unlinking}>
+            {unlinking ? 'Отвязываем…' : 'Отвязать'}
+          </Button>
+        </div>
+      )}
+
       <section className="detail-grid">
         <div className="detail-col">
           <Card>
@@ -198,6 +265,46 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
               </div>
             )}
           </Card>
+
+          {staff.length > 0 && (
+            <Card>
+              <p className="section-label">Сотрудники</p>
+              <div className="related-list">
+                {staff.map((member) => (
+                  <Link className="related-row" to={`/customers/${member.id}`} key={member.id}>
+                    <div className="related-left">
+                      <div className="related-icon">
+                        <Phone />
+                      </div>
+                      <div className="related-text">
+                        <div className="related-title">
+                          {member.contact || member.name}
+                          {member.staffRole ? ` · ${member.staffRole}` : ''}
+                        </div>
+                        <div className="related-meta">{member.phone || '—'}</div>
+                      </div>
+                    </div>
+                    <div className="related-right">
+                      {member.approvalStatus === 'pending' && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: '#a35b00',
+                            background: 'rgba(200,130,0,0.12)',
+                            borderRadius: 'var(--gesso-radius-full)',
+                            padding: '2px 8px',
+                          }}
+                        >
+                          Ожидает
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </Card>
+          )}
         </div>
 
         <div className="detail-col">
@@ -225,6 +332,35 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
                   </Button>
                 )}
               </div>
+
+              {/* Same staff-at-one-business situation the registration
+                  screen's Должность picker is for — this login just belongs
+                  to an already-registered client instead of standing on its
+                  own. Only offered while this customer has no staff of its
+                  own (single-level linking) and isn't already linked. */}
+              {!customer.parentCustomerId && staff.length === 0 && linkable.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="lbl">Сотрудник другой компании?</div>
+                  <div className="sub" style={{ marginBottom: 8 }}>
+                    Привяжите вместо создания отдельного клиента — заявка одобрится автоматически.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div className="select-wrap" style={{ flex: 1 }}>
+                      <select value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)}>
+                        <option value="">Выберите клиента…</option>
+                        {linkable.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <Button variant="ghost" onClick={handleLink} disabled={!linkTargetId || linking}>
+                      {linking ? 'Привязываем…' : 'Привязать'}
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {loginLockedAt && (
                 <div className="status-row" style={{ marginTop: 16 }}>

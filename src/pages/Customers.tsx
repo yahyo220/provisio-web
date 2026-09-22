@@ -15,16 +15,20 @@ const PAGE_SIZE = 5
 export default function Customers() {
   const { customers, orders } = useData()
   const { t, label, ref: refText, customerType } = useLanguage()
-  const customerKpis = useMemo(() => computeCustomerKpis(customers, orders), [customers, orders])
+  // Staff linked to another client (see migration 0047 / CustomerDetail's
+  // "Сотрудники" section) aren't their own client — they live only on their
+  // parent's detail page, not in this list or its KPIs.
+  const topLevel = useMemo(() => customers.filter((c) => !c.parentCustomerId), [customers])
+  const customerKpis = useMemo(() => computeCustomerKpis(topLevel, orders), [topLevel, orders])
   const [search, setSearch] = useState('')
   const [type, setType] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [page, setPage] = useState(1)
 
-  const types = useMemo(() => Array.from(new Set(customers.map((c) => c.type))).sort(), [customers])
+  const types = useMemo(() => Array.from(new Set(topLevel.map((c) => c.type))).sort(), [topLevel])
 
   const filtered = useMemo(() => {
-    let list = customers
+    let list = topLevel
     const q = search.trim().toLowerCase()
     if (q) {
       list = list.filter((c) => c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q))
@@ -32,7 +36,7 @@ export default function Customers() {
     if (type) list = list.filter((c) => c.type === type)
     if (status) list = list.filter((c) => c.status === status)
     return list
-  }, [customers, search, type, status])
+  }, [topLevel, search, type, status])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount)

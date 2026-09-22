@@ -110,12 +110,20 @@ export interface CustomerRow {
   approvalStatus: ApprovalStatus
   priceTier: PriceTier
   hasLogin: boolean
-  /** Role of the person who registered (e.g. "бармен", "повар") — informational,
-   * since one account is often shared by several staff placing orders. */
+  /** One of the app registration screen's fixed choices — "Повар", "Бармен",
+   * "Руководитель" — or blank for a login created some other way (e.g. the
+   * website's own "add customer login"). Informational except as a hint for
+   * what price_tier to grant: only "Руководитель" normally sees prices. */
   staffRole: string
   /** Business name typed at registration (e.g. a cafe/restaurant name) — separate
    * from `name`, which is the account/contact display name. Used on накладная exports. */
   companyName: string
+  /** Set when this login was linked to another client (see migration 0047)
+   * instead of standing as its own — several staff at the same business each
+   * register their own login, and an admin links the later ones here so
+   * only one shows up as a top-level client on this page. Null for either a
+   * standalone client or the client staff are linked *to*. */
+  parentCustomerId: string | null
   /** "Перечисление" (bank transfer) as a checkout payment method — off by
    * default; a customer requests it in the app, an admin grants it here. */
   bankTransferEnabled: boolean

@@ -263,6 +263,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               hasLogin: false,
               staffRole: '',
               companyName: '',
+              parentCustomerId: null,
               bankTransferEnabled: false,
               bankTransferRequested: false,
               cashEnabled: false,

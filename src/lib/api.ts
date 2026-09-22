@@ -130,6 +130,7 @@ export async function fetchAll(): Promise<FetchedData> {
     priceTier: (row.price_tier ?? 'no_price') as PriceTier,
     staffRole: row.staff_role || '',
     companyName: row.company_name || '',
+    parentCustomerId: row.parent_customer_id ?? null,
     bankTransferEnabled: Boolean(row.bank_transfer_enabled),
     bankTransferRequested: Boolean(row.bank_transfer_requested),
     cashEnabled: Boolean(row.cash_enabled),
@@ -331,6 +332,7 @@ export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>)
     dbPatch.login_locked_at = patch.loginLockedAt
     dbPatch.failed_login_attempts = 0
   }
+  if (patch.parentCustomerId !== undefined) dbPatch.parent_customer_id = patch.parentCustomerId
   const { error } = await db.from('customers').update(dbPatch).eq('id', id)
   if (error) throw error
 }
