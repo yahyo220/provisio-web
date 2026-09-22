@@ -8,6 +8,7 @@ import Pagination from '../components/ui/Pagination'
 import StockBadge from '../components/ui/StockBadge'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
+import { suggestNextSku } from '../lib/data'
 import { downloadPriceListExcel, parsePriceFile } from '../lib/exportPriceList'
 import { useData } from '../store/DataContext'
 
@@ -28,7 +29,7 @@ function ProductColgroup() {
 }
 
 export default function Products() {
-  const { products, toggleProductActive, removeProduct, updateProduct } = useData()
+  const { products, toggleProductActive, removeProduct, updateProduct, addProduct } = useData()
   const { t, category, unit } = useLanguage()
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
@@ -83,21 +84,54 @@ export default function Products() {
     try {
       const rows = await parsePriceFile(file)
       const bySku = new Map(products.map((p) => [p.sku, p]))
+      // Rows this same import batch has already claimed a SKU for — an
+      // auto-generated one (suggestNextSku) or an explicit new one — so two
+      // new products in one file never collide with each other. `addProduct`
+      // only updates `products` after its own refetch resolves, which lands
+      // well after this loop has already moved on to the next row.
+      const knownSkus = new Set(products.map((p) => p.sku))
+
+      let created = 0
       let updated = 0
       let skipped = 0
       for (const row of rows) {
-        const product = bySku.get(row.sku)
-        if (!product) {
+        const existing = row.sku ? bySku.get(row.sku) : undefined
+        if (existing) {
+          await updateProduct(existing.id, {
+            name: row.name || existing.name,
+            category: row.category ?? existing.category,
+            unit: row.unit ?? existing.unit,
+            price: String(row.price),
+            priceExternal: row.priceExternal != null ? String(row.priceExternal) : '',
+          })
+          updated++
+          continue
+        }
+        // No matching product — worth creating only if there's enough to
+        // actually make one; otherwise this is either a stale/misspelled SKU
+        // meant to update something (row.sku set, name/category/unit blank)
+        // or a row missing what a new product needs.
+        if (!row.name || !row.category || !row.unit) {
           skipped++
           continue
         }
-        await updateProduct(product.id, {
-          price: String(row.price),
-          priceExternal: row.priceExternal != null ? String(row.priceExternal) : '',
+        const sku = row.sku && !knownSkus.has(row.sku) ? row.sku : suggestNextSku(row.category, [...knownSkus].map((s) => ({ sku: s })))
+        knownSkus.add(sku)
+        await addProduct({
+          name: row.name,
+          sku,
+          category: row.category,
+          unit: row.unit,
+          price: row.price,
+          priceExternal: row.priceExternal,
+          stock: 'in',
+          active: true,
         })
-        updated++
+        created++
       }
-      setImportMsg(skipped > 0 ? `Обновлено: ${updated}. Не найдено по SKU: ${skipped}.` : `Обновлено цен: ${updated}.`)
+      const parts = [`Добавлено: ${created}`, `Обновлено: ${updated}`]
+      if (skipped > 0) parts.push(`Пропущено: ${skipped} (нет SKU совпадения и не хватает названия/категории/ед. изм.)`)
+      setImportMsg(parts.join('. ') + '.')
     } catch (err) {
       setImportMsg(`Не удалось прочитать файл: ${(err as Error).message}`)
     } finally {
@@ -114,7 +148,7 @@ export default function Products() {
         </div>
         <div className="header-actions">
           <Button variant="ghost" icon={<Upload />} onClick={() => fileInputRef.current?.click()} disabled={importing}>
-            {importing ? 'Загружаем…' : 'Импорт цен'}
+            {importing ? 'Загружаем…' : 'Импорт товаров'}
           </Button>
           <input
             ref={fileInputRef}
