@@ -13,5 +13,13 @@
 -- nothing legitimate ever called this RPC directly. Same treatment as
 -- check_login_lock/record_login_result in 0048: service_role-only now, the
 -- edge function's existing service-role client makes the call instead.
-revoke execute on function public.resolve_login_email(text) from anon, authenticated;
+--
+-- Unlike 0044 (which 0048 built on), 0018 never revoked the implicit
+-- default PUBLIC execute grant every new function gets — it only added an
+-- explicit grant to anon/authenticated on top of it. Revoking just from
+-- anon/authenticated therefore did nothing on its own; PUBLIC (which every
+-- role, including anon, inherits through) still let anyone call it. Caught
+-- live by testing a direct anon RPC call after this migration first shipped
+-- without the "from public" revoke below — it still succeeded.
+revoke all on function public.resolve_login_email(text) from public;
 grant execute on function public.resolve_login_email(text) to service_role;
