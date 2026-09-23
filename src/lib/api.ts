@@ -21,6 +21,15 @@ function assertClient() {
   return supabase
 }
 
+/** Dashboard's Recent Orders table shows this in its "Products" column —
+ * the first couple of item names, "+N" for the rest. Undefined (blank
+ * column) only for an order with no line items yet. */
+function formatProductsSummary(names: string[] | undefined): string | undefined {
+  if (!names || names.length === 0) return undefined
+  if (names.length <= 2) return names.join(', ')
+  return `${names.slice(0, 2).join(', ')} +${names.length - 2}`
+}
+
 export interface FetchedData {
   products: ProductRow[]
   customers: CustomerRow[]
@@ -82,8 +91,18 @@ export async function fetchAll(): Promise<FetchedData> {
   }))
 
   const totalsByOrder = new Map<string, number>()
+  // Dashboard's Recent Orders table shows a "Products" column per order —
+  // order_items only carries product_id, not a name, but products was
+  // already fetched in full above, so a join here needs no extra query.
+  const productNameById = new Map((productsRes.data ?? []).map((p) => [p.id as string, p.name as string]))
+  const itemNamesByOrder = new Map<string, string[]>()
   for (const item of itemsRes.data ?? []) {
     totalsByOrder.set(item.order_id, (totalsByOrder.get(item.order_id) ?? 0) + item.qty * Number(item.unit_price))
+    const name = item.product_id ? productNameById.get(item.product_id) : undefined
+    if (!name) continue
+    const names = itemNamesByOrder.get(item.order_id)
+    if (names) names.push(name)
+    else itemNamesByOrder.set(item.order_id, [name])
   }
 
   const customersById = new Map((customersRes.data ?? []).map((c) => [c.id, c]))
@@ -93,7 +112,12 @@ export async function fetchAll(): Promise<FetchedData> {
   const orders: OrderRow[] = (ordersRes.data ?? []).map((row) => {
     const customer = row.customer_id ? customersById.get(row.customer_id) : null
     const total = (totalsByOrder.get(row.id) ?? 0) + Number(row.delivery_fee ?? 0)
-    if (row.customer_id) {
+    // Matches every other money aggregation in this codebase (stats.ts's
+    // KPIs/analytics/top-customers, exportInvoices.ts's ordersInRange) —
+    // a cancelled order was inflating "lifetime spend"/order count here
+    // while correctly excluded everywhere else, so the same customer could
+    // show different totals on different pages.
+    if (row.customer_id && row.status !== 'cancelled') {
       ordersByCustomer.set(row.customer_id, (ordersByCustomer.get(row.customer_id) ?? 0) + 1)
       spentByCustomer.set(row.customer_id, (spentByCustomer.get(row.customer_id) ?? 0) + total)
     }
@@ -110,7 +134,7 @@ export async function fetchAll(): Promise<FetchedData> {
       deliveryFee: Number(row.delivery_fee ?? 0),
       payment: row.payment as PaymentStatus,
       status: row.status as OrderStatus,
-      products: undefined,
+      products: formatProductsSummary(itemNamesByOrder.get(row.id)),
     }
   })
 

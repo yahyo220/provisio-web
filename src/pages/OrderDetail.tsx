@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
+import Modal from '../components/ui/Modal'
 import StatusPill from '../components/ui/StatusPill'
 import { useLanguage } from '../i18n/LanguageContext'
 import { fetchOrderFeedback, fetchOrderItems, updateOrderItemPrice, updateOrderItemQty, type OrderFeedbackRow } from '../lib/api'
@@ -51,6 +52,8 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
   const [markingPaid, setMarkingPaid] = useState(false)
   const [feedback, setFeedback] = useState<OrderFeedbackRow[]>([])
   const [exportingExcel, setExportingExcel] = useState(false)
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
   // While a price field is mid-edit, its displayed text is tracked here
   // instead of coming straight from lineItems — otherwise clearing the
   // field to type a new number snaps back to "0" on every keystroke
@@ -98,21 +101,37 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
   const total = subtotal + order.deliveryFee
 
   function changeQty(item: OrderLineItem, delta: number) {
-    const qty = Math.max(0, item.qty + delta)
-    setLineItems((items) => items.map((i) => (i === item ? { ...i, qty } : i)))
-    if (item.id) updateOrderItemQty(item.id, qty).catch((err) => console.error(err))
+    applyQty(item, Math.max(0, item.qty + delta))
   }
 
   function setQty(item: OrderLineItem, qty: number) {
-    const safeQty = Math.max(0, qty)
-    setLineItems((items) => items.map((i) => (i === item ? { ...i, qty: safeQty } : i)))
-    if (item.id) updateOrderItemQty(item.id, safeQty).catch((err) => console.error(err))
+    applyQty(item, Math.max(0, qty))
+  }
+
+  // Shared by changeQty/setQty — optimistic update with a rollback + a
+  // visible error if the write fails, instead of silently drifting from
+  // what's actually saved (found in a fresh audit pass: this and setPrice/
+  // changeStatus below used to just console.error and leave the UI showing
+  // an edit that was never persisted).
+  function applyQty(item: OrderLineItem, qty: number) {
+    const prevQty = item.qty
+    setLineItems((items) => items.map((i) => (i === item ? { ...i, qty } : i)))
+    if (!item.id) return
+    updateOrderItemQty(item.id, qty).catch(() => {
+      setLineItems((items) => items.map((i) => (i === item ? { ...i, qty: prevQty } : i)))
+      setStatusError(t('common.saveFailed'))
+    })
   }
 
   function setPrice(item: OrderLineItem, unitPrice: number) {
     const safePrice = Math.max(0, unitPrice)
+    const prevPrice = item.unitPrice
     setLineItems((items) => items.map((i) => (i === item ? { ...i, unitPrice: safePrice } : i)))
-    if (item.id) updateOrderItemPrice(item.id, safePrice).catch((err) => console.error(err))
+    if (!item.id) return
+    updateOrderItemPrice(item.id, safePrice).catch(() => {
+      setLineItems((items) => items.map((i) => (i === item ? { ...i, unitPrice: prevPrice } : i)))
+      setStatusError(t('common.saveFailed'))
+    })
   }
 
   function lineKey(item: OrderLineItem) {
@@ -120,8 +139,12 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
   }
 
   function changeStatus(next: OrderStatus) {
+    const prevStatus = status
     setStatus(next)
-    updateOrderStatus(order.id, next).catch((err) => console.error(err))
+    updateOrderStatus(order.id, next).catch(() => {
+      setStatus(prevStatus)
+      setStatusError(t('common.saveFailed'))
+    })
   }
 
   async function markPaid() {
@@ -177,6 +200,21 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
           />
         </div>
       </div>
+
+      {statusError && (
+        <div
+          style={{
+            background: 'rgba(192,40,40,0.08)',
+            color: 'var(--gesso-danger, #c02828)',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '12px 16px',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          {statusError}
+        </div>
+      )}
 
       <section className="detail-grid">
         <div className="detail-col">
@@ -356,7 +394,8 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
               <Button
                 variant="danger-text"
                 block
-                onClick={() => changeStatus('cancelled')}
+                onClick={() => setConfirmingCancel(true)}
+                disabled={status === 'cancelled'}
                 style={{
                   justifyContent: 'center',
                   border: '1px solid var(--gesso-divider)',
@@ -369,6 +408,33 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
           </Card>
         </div>
       </section>
+
+      {confirmingCancel && (
+        <Modal
+          title={`Отменить заказ #${order.orderNumber}?`}
+          onClose={() => setConfirmingCancel(false)}
+          footer={
+            <>
+              <Button variant="text" onClick={() => setConfirmingCancel(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                variant="danger-text"
+                onClick={() => {
+                  changeStatus('cancelled')
+                  setConfirmingCancel(false)
+                }}
+              >
+                {t('orderDetail.cancelOrder')}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 14, color: 'var(--gesso-fg-muted)' }}>
+            Клиент и курьер будут уведомлены об отмене. Отменить действие потом можно только сменив статус заново.
+          </p>
+        </Modal>
+      )}
 
       <Card>
         <div className="related-header">

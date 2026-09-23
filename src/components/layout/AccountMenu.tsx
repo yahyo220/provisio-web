@@ -6,6 +6,45 @@ import { useAuth } from '../../store/AuthContext'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 
+// AccountMenu's "Сохранить изменения" used to just close the modal — name/
+// role/notification toggles reset to these defaults on every reload with
+// nothing telling the admin that never actually saved. There's no backend
+// field for any of this except admin_users.name, and adding one just for a
+// header-avatar display name felt like more production surface than a
+// cosmetic preference warrants — localStorage genuinely does persist it
+// (per browser, which is the honest scope for "remember my preference"
+// here), it just doesn't sync across devices. Email is deliberately NOT
+// editable here — it's session.user.email, the real login identity, and
+// changing that needs a real Supabase Auth flow, not a cosmetic form field.
+const LOCAL_STORAGE_KEY = 'provisio_account_prefs'
+
+interface StoredPrefs {
+  name: string
+  role: string
+  emailNotifications: boolean
+  smsAlerts: boolean
+}
+
+function loadPrefs(): StoredPrefs {
+  const fallback: StoredPrefs = { name: 'Admin', role: 'Operations manager', emailNotifications: true, smsAlerts: false }
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (!raw) return fallback
+    return { ...fallback, ...JSON.parse(raw) }
+  } catch {
+    return fallback
+  }
+}
+
+function savePrefs(prefs: StoredPrefs) {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(prefs))
+  } catch {
+    // Private browsing / storage disabled — the form still works for this
+    // session, it just won't remember across reloads.
+  }
+}
+
 export default function AccountMenu() {
   const { t, lang, setLang } = useLanguage()
   const { session, signOut } = useAuth()
@@ -14,12 +53,22 @@ export default function AccountMenu() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const ref = useClickOutside<HTMLDivElement>(open, () => setOpen(false))
 
-  const [name, setName] = useState('Admin')
-  const [email, setEmail] = useState(session?.user.email ?? '')
-  const [role, setRole] = useState('Operations manager')
+  const [prefs, setPrefs] = useState<StoredPrefs>(loadPrefs)
+  const { name, role, emailNotifications, smsAlerts } = prefs
+  const email = session?.user.email ?? ''
 
-  const [emailNotifications, setEmailNotifications] = useState(true)
-  const [smsAlerts, setSmsAlerts] = useState(false)
+  function setName(next: string) {
+    setPrefs((p) => ({ ...p, name: next }))
+  }
+  function setRole(next: string) {
+    setPrefs((p) => ({ ...p, role: next }))
+  }
+  function setEmailNotifications(next: boolean | ((v: boolean) => boolean)) {
+    setPrefs((p) => ({ ...p, emailNotifications: typeof next === 'function' ? next(p.emailNotifications) : next }))
+  }
+  function setSmsAlerts(next: boolean | ((v: boolean) => boolean)) {
+    setPrefs((p) => ({ ...p, smsAlerts: typeof next === 'function' ? next(p.smsAlerts) : next }))
+  }
 
   const initials =
     name
@@ -107,7 +156,13 @@ export default function AccountMenu() {
           title={t('account.profileTitle')}
           onClose={() => setProfileOpen(false)}
           footer={
-            <Button variant="primary" onClick={() => setProfileOpen(false)}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                savePrefs(prefs)
+                setProfileOpen(false)
+              }}
+            >
               {t('common.saveChanges')}
             </Button>
           }
@@ -122,7 +177,7 @@ export default function AccountMenu() {
           </div>
           <div className="field">
             <label htmlFor="profile-email">{t('common.email')}</label>
-            <input id="profile-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input id="profile-email" type="email" value={email} disabled />
           </div>
         </Modal>
       )}
@@ -132,7 +187,13 @@ export default function AccountMenu() {
           title={t('account.settingsTitle')}
           onClose={() => setSettingsOpen(false)}
           footer={
-            <Button variant="primary" onClick={() => setSettingsOpen(false)}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                savePrefs(prefs)
+                setSettingsOpen(false)
+              }}
+            >
               {t('common.saveChanges')}
             </Button>
           }

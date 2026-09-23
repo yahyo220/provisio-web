@@ -23,6 +23,8 @@ export default function Deliveries() {
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignDelivery, setAssignDelivery] = useState('')
   const [assignDriverName, setAssignDriverName] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignError, setAssignError] = useState<string | null>(null)
 
   const statusOptions = DELIVERY_STATUSES.map((s) => ({ value: s, label: t(`deliveryStatus.${s}`) }))
 
@@ -43,9 +45,19 @@ export default function Deliveries() {
     return list
   }, [deliveries, search, status, todayOnly])
 
-  function handleAssign() {
-    assignDriver(assignDelivery, assignDriverName)
-    setAssignOpen(false)
+  async function handleAssign() {
+    const name = assignDriverName.trim()
+    if (!assignDelivery || !name || assigning) return
+    setAssigning(true)
+    setAssignError(null)
+    try {
+      await assignDriver(assignDelivery, name)
+      setAssignOpen(false)
+    } catch {
+      setAssignError(t('common.saveFailed'))
+    } finally {
+      setAssigning(false)
+    }
   }
 
   return (
@@ -190,15 +202,18 @@ export default function Deliveries() {
           onClose={() => setAssignOpen(false)}
           footer={
             <>
-              <Button variant="text" onClick={() => setAssignOpen(false)}>
+              <Button variant="text" onClick={() => setAssignOpen(false)} disabled={assigning}>
                 {t('common.cancel')}
               </Button>
-              <Button variant="primary" onClick={handleAssign}>
-                {t('deliveries.modal.assign')}
+              <Button variant="primary" onClick={handleAssign} disabled={assigning || !assignDriverName.trim()}>
+                {assigning ? 'Назначаем…' : t('deliveries.modal.assign')}
               </Button>
             </>
           }
         >
+          {assignError && (
+            <p style={{ color: 'var(--gesso-danger, #c02828)', fontSize: 13, marginBottom: 12 }}>{assignError}</p>
+          )}
           <div className="field">
             <label htmlFor="assign-delivery">{t('deliveries.modal.delivery')}</label>
             <div className="select-wrap">

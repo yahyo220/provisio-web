@@ -69,6 +69,8 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [variantBusy, setVariantBusy] = useState(false)
+  const [variantError, setVariantError] = useState<string | null>(null)
   // `photo` = the currently *saved* image (existing hosted URL, or null if
   // there never was one / it was removed). Picking a new file doesn't touch
   // it or upload anything yet — it just previews locally (`pendingFile` +
@@ -112,6 +114,10 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
 
   async function handleSave() {
     if (saving) return
+    if (!name.trim()) {
+      setSaveError(t('common.nameRequired'))
+      return
+    }
     let image = photo ?? ''
     if (pendingFile) {
       setUploading(true)
@@ -182,19 +188,42 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   )
 
   async function addVariant(otherId: string) {
-    if (!otherId) return
+    if (!otherId || variantBusy) return
+    setVariantBusy(true)
+    setVariantError(null)
     let gid = variantGroupId
-    if (!gid) {
-      gid = crypto.randomUUID()
-      await updateProduct(product.id, { variantGroupId: gid })
+    let createdGroup = false
+    try {
+      if (!gid) {
+        gid = crypto.randomUUID()
+        await updateProduct(product.id, { variantGroupId: gid })
+        createdGroup = true
+      }
+      await updateProduct(otherId, { variantGroupId: gid })
       setVariantGroupId(gid)
+      setAddVariantId('')
+    } catch {
+      // The sibling update failed after we'd already created a brand-new
+      // group for this product — undo that so it's not left orphaned
+      // (a group of one, with nothing actually linked to it).
+      if (createdGroup) await updateProduct(product.id, { variantGroupId: null }).catch(() => {})
+      setVariantError(t('common.saveFailed'))
+    } finally {
+      setVariantBusy(false)
     }
-    await updateProduct(otherId, { variantGroupId: gid })
-    setAddVariantId('')
   }
 
   async function removeVariant(otherId: string) {
-    await updateProduct(otherId, { variantGroupId: null })
+    if (variantBusy) return
+    setVariantBusy(true)
+    setVariantError(null)
+    try {
+      await updateProduct(otherId, { variantGroupId: null })
+    } catch {
+      setVariantError(t('common.saveFailed'))
+    } finally {
+      setVariantBusy(false)
+    }
   }
 
   return (
@@ -514,6 +543,9 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               помидоров) — в приложении покупатель сможет переключаться между ними прямо внутри карточки товара.
               Изменения здесь применяются сразу, без кнопки «Сохранить».
             </p>
+            {variantError && (
+              <p style={{ color: 'var(--gesso-danger, #c02828)', fontSize: 13, marginTop: 8 }}>{variantError}</p>
+            )}
             {siblings.length > 0 && (
               <div className="chip-row" style={{ marginTop: 12 }}>
                 {siblings.map((s) => (
@@ -522,6 +554,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
                     <button
                       type="button"
                       onClick={() => removeVariant(s.id)}
+                      disabled={variantBusy}
                       aria-label={`Убрать «${s.name}» из вариантов`}
                       style={{ display: 'inline-flex', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                     >
@@ -535,7 +568,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               <div className="field">
                 <label htmlFor="pd-add-variant">Добавить товар в варианты</label>
                 <div className="select-wrap">
-                  <select id="pd-add-variant" value={addVariantId} onChange={(e) => setAddVariantId(e.target.value)}>
+                  <select id="pd-add-variant" value={addVariantId} onChange={(e) => setAddVariantId(e.target.value)} disabled={variantBusy}>
                     <option value="">Выбери товар…</option>
                     {availableForVariant.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -546,7 +579,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
                   <ChevronDown />
                 </div>
               </div>
-              <Button variant="ghost" onClick={() => addVariant(addVariantId)} disabled={!addVariantId}>
+              <Button variant="ghost" onClick={() => addVariant(addVariantId)} disabled={!addVariantId || variantBusy}>
                 Добавить
               </Button>
             </div>

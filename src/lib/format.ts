@@ -41,13 +41,19 @@ export function formatMoney(amount: number): string {
 
 /** Parses a possibly-formatted money value (already a number, or a string a
  * person may have hand-typed/edited in Excel — thousands separators, a
- * "сум" suffix, etc.) into a plain number. Strips everything but digits and
- * the decimal point before converting — a bare Number(...) silently returns
- * NaN on anything with a space/separator, which once made a hand-retyped
- * price silently drop a whole price-list import row. */
+ * "сум" suffix, etc.) into a plain number. Strips everything but digits,
+ * the decimal point, and a leading minus before converting — a bare
+ * Number(...) silently returns NaN on anything with a space/separator,
+ * which once made a hand-retyped price silently drop a whole price-list
+ * import row. formatMoney() below does emit a leading "-" for negative
+ * amounts, so this needs to round-trip that rather than strip it. */
 export function parseMoney(raw: unknown): number {
   if (typeof raw === 'number') return raw
-  return Number(String(raw ?? '').replace(/[^\d.]/g, ''))
+  const s = String(raw ?? '').trim()
+  const negative = s.startsWith('-')
+  const digits = s.replace(/[^\d.]/g, '')
+  const n = Number(digits)
+  return negative ? -n : n
 }
 
 export function initialsOf(name: string): string {

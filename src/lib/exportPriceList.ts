@@ -102,11 +102,17 @@ export async function parsePriceFile(file: File): Promise<ProductImportRow[]> {
   const rows: ProductImportRow[] = []
   ws.eachRow((row, rowNumber) => {
     const sku = String(row.getCell(1).value ?? '').trim()
-    // Same NaN-on-formatted-number footgun as the price cells below (see
-    // parseMoney) — a bare Number(...) here misidentified row 1 as a
-    // header (and silently skipped it as real data) whenever its price had
-    // been hand-retyped with a thousands separator.
-    if (rowNumber === 1 && (sku.toLowerCase() === 'sku' || !Number.isFinite(parseMoney(row.getCell(5).value)))) return
+    // "Does the price cell contain at least one digit" is what actually
+    // distinguishes a header ("Цена", "Price" — no digits) from real data
+    // (any price, even one that strips to nothing meaningful via
+    // parseMoney still has digits in it). The previous version checked
+    // `!Number.isFinite(parseMoney(...))`, but parseMoney("Цена") is 0 —
+    // finite — so a header whose SKU cell wasn't literally "sku" (e.g. a
+    // Russian-only "Артикул" header) was never caught and got misread as
+    // a real ₴0 product row.
+    const priceCellRaw = row.getCell(5).value
+    const looksLikeHeader = sku.toLowerCase() === 'sku' || (typeof priceCellRaw !== 'number' && !/\d/.test(String(priceCellRaw ?? '')))
+    if (rowNumber === 1 && looksLikeHeader) return
     const name = String(row.getCell(2).value ?? '').trim()
     const category = resolveCategory(String(row.getCell(3).value ?? ''))
     const unit = resolveUnit(String(row.getCell(4).value ?? ''))

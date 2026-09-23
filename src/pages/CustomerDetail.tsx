@@ -81,7 +81,10 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
     try {
       await updateCustomer(customer.id, {
         parentCustomerId: linkTargetId,
-        approvalStatus: 'approved',
+        // Only auto-approve a still-pending signup — linking must never
+        // silently un-suspend an account an admin had deliberately blocked,
+        // or touch one that's already approved.
+        approvalStatus: customer.approvalStatus === 'pending' ? 'approved' : customer.approvalStatus,
         // The `priceTier` state (what the admin sees selected in "Тип цены"
         // below), not the `customer` prop — that's the last-loaded snapshot,
         // so using it here could silently revert a tier the admin just
@@ -89,6 +92,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
         priceTier: customer.staffRole === 'Руководитель' ? 'with_price' : priceTier,
       })
       setLinkTargetId('')
+    } catch {
+      setSaveError(t('common.saveFailed'))
     } finally {
       setLinking(false)
     }
@@ -98,6 +103,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
     setUnlinking(true)
     try {
       await updateCustomer(customer.id, { parentCustomerId: null })
+    } catch {
+      setSaveError(t('common.saveFailed'))
     } finally {
       setUnlinking(false)
     }
@@ -105,6 +112,10 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
 
   async function handleSave() {
     if (saving) return
+    if (!name.trim()) {
+      setSaveError(t('common.nameRequired'))
+      return
+    }
     setSaving(true)
     setSaveError(null)
     try {
@@ -121,6 +132,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
     setApproving(true)
     try {
       await updateCustomer(customer.id, { approvalStatus: 'approved', priceTier })
+    } catch {
+      setSaveError(t('common.saveFailed'))
     } finally {
       setApproving(false)
     }
@@ -133,6 +146,9 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
     setBankTransferEnabled(next)
     try {
       await updateCustomer(customer.id, { bankTransferEnabled: next })
+    } catch {
+      setBankTransferEnabled(!next)
+      setSaveError(t('common.saveFailed'))
     } finally {
       setBankTransferBusy(false)
     }
@@ -143,6 +159,9 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
     setCashEnabled(next)
     try {
       await updateCustomer(customer.id, { cashEnabled: next })
+    } catch {
+      setCashEnabled(!next)
+      setSaveError(t('common.saveFailed'))
     } finally {
       setCashBusy(false)
     }
@@ -155,6 +174,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
     try {
       await updateCustomer(customer.id, { loginLockedAt: null })
       setLoginLockedAt(null)
+    } catch {
+      setSaveError(t('common.saveFailed'))
     } finally {
       setUnlocking(false)
     }
