@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
+import Modal from '../components/ui/Modal'
 import Pagination from '../components/ui/Pagination'
 import StockBadge from '../components/ui/StockBadge'
 import Switch from '../components/ui/Switch'
@@ -38,6 +39,8 @@ export default function Products() {
   const [page, setPage] = useState(1)
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const categories = useMemo(
@@ -68,6 +71,17 @@ export default function Products() {
   }
 
   const [exporting, setExporting] = useState(false)
+
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await removeProduct(deleteTarget.id)
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   async function handleExport() {
     setExporting(true)
@@ -354,7 +368,7 @@ export default function Products() {
                         type="button"
                         className="action-btn danger"
                         aria-label="Delete product"
-                        onClick={() => removeProduct(product.id)}
+                        onClick={() => setDeleteTarget({ id: product.id, name: product.name })}
                       >
                         <Trash2 />
                       </button>
@@ -380,6 +394,25 @@ export default function Products() {
           bordered
         />
       </div>
+
+      {deleteTarget && (
+        <Modal
+          title={`Удалить «${deleteTarget.name}»?`}
+          onClose={() => setDeleteTarget(null)}
+          footer={
+            <>
+              <Button variant="text" onClick={() => setDeleteTarget(null)}>
+                {t('common.cancel')}
+              </Button>
+              <Button variant="danger-text" onClick={handleConfirmDelete} disabled={deleting}>
+                {deleting ? 'Удаляем…' : 'Удалить'}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 14, color: 'var(--gesso-fg-muted)' }}>Если удалите, восстановить будет нельзя.</p>
+        </Modal>
+      )}
     </>
   )
 }

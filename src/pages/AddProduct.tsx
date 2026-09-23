@@ -8,6 +8,7 @@ import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
 import { uploadProductPhoto } from '../lib/api'
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS, suggestNextSku } from '../lib/data'
+import { parseMoney } from '../lib/format'
 import type { StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -49,6 +50,8 @@ export default function AddProduct() {
   const photoPreviewUrlRef = useRef<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   function setPreview(url: string | null) {
@@ -90,7 +93,7 @@ export default function AddProduct() {
   }, [selectedCategory, products])
 
   async function handleSave(andAddAnother: boolean) {
-    if (!name.trim() || !sku.trim()) return
+    if (!name.trim() || !sku.trim() || saving) return
     let imageUrl: string | undefined
     if (photoFile) {
       setUploading(true)
@@ -106,47 +109,57 @@ export default function AddProduct() {
       }
       setUploading(false)
     }
-    await addProduct({
-      name,
-      sku,
-      category: selectedCategory,
-      price: Number(price || 0),
-      priceExternal: priceExternal.trim() ? Number(priceExternal) : null,
-      unit: selectedUnits[0] ?? 'box',
-      units: selectedUnits,
-      unitPrices: extraUnits.map((u) => ({
-        unit: u,
-        price: Number(unitPrices[u]?.price || 0),
-        priceExternal: unitPrices[u]?.priceExternal?.trim() ? Number(unitPrices[u]!.priceExternal) : null,
-      })),
-      description,
-      nameUzCyrl,
-      nameUzLatn,
-      nameEn,
-      descriptionUzCyrl,
-      descriptionUzLatn,
-      descriptionEn,
-      stock,
-      active,
-      imageUrl,
-    })
-    if (andAddAnother) {
-      setName('')
-      setNameUzCyrl('')
-      setNameUzLatn('')
-      setNameEn('')
-      setDescription('')
-      setDescriptionUzCyrl('')
-      setDescriptionUzLatn('')
-      setDescriptionEn('')
-      skuTouched.current = false
-      setSku(suggestNextSku(selectedCategory, [...products, { sku }]))
-      setPrice('')
-      setPriceExternal('')
-      setUnitPrices({})
-      clearPhoto()
-    } else {
-      navigate('/products')
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await addProduct({
+        name,
+        sku,
+        category: selectedCategory,
+        // parseMoney (not a bare Number(price)) so a hand-typed thousands
+        // separator ("12 000") doesn't go NaN and fail the insert outright.
+        price: parseMoney(price) || 0,
+        priceExternal: priceExternal.trim() ? parseMoney(priceExternal) : null,
+        unit: selectedUnits[0] ?? 'box',
+        units: selectedUnits,
+        unitPrices: extraUnits.map((u) => ({
+          unit: u,
+          price: parseMoney(unitPrices[u]?.price) || 0,
+          priceExternal: unitPrices[u]?.priceExternal?.trim() ? parseMoney(unitPrices[u]!.priceExternal) : null,
+        })),
+        description,
+        nameUzCyrl,
+        nameUzLatn,
+        nameEn,
+        descriptionUzCyrl,
+        descriptionUzLatn,
+        descriptionEn,
+        stock,
+        active,
+        imageUrl,
+      })
+      if (andAddAnother) {
+        setName('')
+        setNameUzCyrl('')
+        setNameUzLatn('')
+        setNameEn('')
+        setDescription('')
+        setDescriptionUzCyrl('')
+        setDescriptionUzLatn('')
+        setDescriptionEn('')
+        skuTouched.current = false
+        setSku(suggestNextSku(selectedCategory, [...products, { sku }]))
+        setPrice('')
+        setPriceExternal('')
+        setUnitPrices({})
+        clearPhoto()
+        setSaving(false)
+      } else {
+        navigate('/products')
+      }
+    } catch {
+      setSaveError(t('common.saveFailed'))
+      setSaving(false)
     }
   }
 
@@ -161,14 +174,29 @@ export default function AddProduct() {
           <Link to="/products" className="btn btn-text">
             {t('common.discard')}
           </Link>
-          <Button variant="ghost" onClick={() => handleSave(true)} disabled={uploading}>
-            {t('addProduct.saveAndAddAnother')}
+          <Button variant="ghost" onClick={() => handleSave(true)} disabled={uploading || saving}>
+            {saving ? 'Сохраняем…' : t('addProduct.saveAndAddAnother')}
           </Button>
-          <Button variant="primary" icon={<Check />} onClick={() => handleSave(false)} disabled={uploading}>
-            {t('addProduct.saveProduct')}
+          <Button variant="primary" icon={<Check />} onClick={() => handleSave(false)} disabled={uploading || saving}>
+            {saving ? 'Сохраняем…' : t('addProduct.saveProduct')}
           </Button>
         </div>
       </div>
+
+      {saveError && (
+        <div
+          style={{
+            background: 'rgba(192,40,40,0.08)',
+            color: 'var(--gesso-danger, #c02828)',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '12px 16px',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          {saveError}
+        </div>
+      )}
 
       <section className="form-grid">
         <div className="col">
@@ -430,11 +458,11 @@ export default function AddProduct() {
               <Link to="/products" className="btn btn-text">
                 {t('common.cancel')}
               </Link>
-              <Button variant="ghost" onClick={() => handleSave(true)} disabled={uploading}>
-                {t('addProduct.saveAndAddAnother')}
+              <Button variant="ghost" onClick={() => handleSave(true)} disabled={uploading || saving}>
+                {saving ? 'Сохраняем…' : t('addProduct.saveAndAddAnother')}
               </Button>
-              <Button variant="primary" icon={<Check />} onClick={() => handleSave(false)} disabled={uploading}>
-                {t('addProduct.saveProduct')}
+              <Button variant="primary" icon={<Check />} onClick={() => handleSave(false)} disabled={uploading || saving}>
+                {saving ? 'Сохраняем…' : t('addProduct.saveProduct')}
               </Button>
             </div>
           </Card>

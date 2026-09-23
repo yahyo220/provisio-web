@@ -17,16 +17,25 @@ export default function AddCustomer() {
   const [type, setType] = useState('Restaurant')
   const [contact, setContact] = useState('')
   const [location, setLocation] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   async function handleSave() {
-    if (!name.trim()) return
-    await addCustomer({
-      name,
-      type,
-      contact: contact || '—',
-      location: location || '—',
-    })
-    navigate('/customers')
+    if (!name.trim() || saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await addCustomer({
+        name,
+        type,
+        contact: contact || '—',
+        location: location || '—',
+      })
+      navigate('/customers')
+    } catch {
+      setSaveError(t('common.saveFailed'))
+      setSaving(false)
+    }
   }
 
   return (
@@ -40,11 +49,26 @@ export default function AddCustomer() {
           <Link to="/customers" className="btn btn-text">
             {t('common.discard')}
           </Link>
-          <Button variant="primary" icon={<Check />} onClick={handleSave}>
-            {t('addCustomer.saveCustomer')}
+          <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={saving}>
+            {saving ? 'Сохраняем…' : t('addCustomer.saveCustomer')}
           </Button>
         </div>
       </div>
+
+      {saveError && (
+        <div
+          style={{
+            background: 'rgba(192,40,40,0.08)',
+            color: 'var(--gesso-danger, #c02828)',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '12px 16px',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          {saveError}
+        </div>
+      )}
 
       <Card style={{ maxWidth: 560 }}>
         <p className="section-label">{t('customerDetail.companyDetails')}</p>
@@ -100,8 +124,8 @@ export default function AddCustomer() {
           <Link to="/customers" className="btn btn-text">
             {t('common.cancel')}
           </Link>
-          <Button variant="primary" icon={<Check />} onClick={handleSave}>
-            {t('addCustomer.saveCustomer')}
+          <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={saving}>
+            {saving ? 'Сохраняем…' : t('addCustomer.saveCustomer')}
           </Button>
         </div>
       </Card>

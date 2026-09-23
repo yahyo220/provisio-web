@@ -7,12 +7,14 @@
 // result to record_login_result() (0044) so 3 wrong passwords locks the
 // account until an admin unlocks it on the website.
 //
-// check_login_lock/record_login_result are service_role-only as of
-// migration 0048 (they used to be callable by anon directly, which let
-// anyone lock any account with 3 fake calls and no real password attempt)
-// — so this function needs a service-role client for just those two calls.
-// SUPABASE_SERVICE_ROLE_KEY is provided automatically for edge functions,
-// same as supabase/functions/create-account.
+// check_login_lock/record_login_result/resolve_login_email are all
+// service_role-only as of migrations 0048/0050 (they used to be callable by
+// anon directly — one let anyone lock any account with 3 fake calls, the
+// other let anyone enumerate which logins exist by the shape of its
+// response) — so this function needs a service-role client for those three
+// calls. SUPABASE_SERVICE_ROLE_KEY is provided automatically for edge
+// functions, same as supabase/functions/create-account. The anon client is
+// still used for auth.signInWithPassword() itself, which needs to be.
 //
 // Deploy with:
 //   supabase functions deploy login
@@ -49,7 +51,7 @@ Deno.serve(async (req) => {
       return json({ error: 'Аккаунт заблокирован после нескольких неверных попыток входа. Обратитесь в поддержку.' }, 423)
     }
 
-    const { data: email, error: resolveErr } = await db.rpc('resolve_login_email', { p_login: login })
+    const { data: email, error: resolveErr } = await admin.rpc('resolve_login_email', { p_login: login })
     if (resolveErr || !email) return json({ error: 'Неверный логин или пароль' }, 401)
 
     const { data: signInData, error: signInError } = await db.auth.signInWithPassword({

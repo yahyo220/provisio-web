@@ -39,6 +39,17 @@ export function formatMoney(amount: number): string {
   return `${rounded < 0 ? '-' : ''}${out} сум`
 }
 
+/** Parses a possibly-formatted money value (already a number, or a string a
+ * person may have hand-typed/edited in Excel — thousands separators, a
+ * "сум" suffix, etc.) into a plain number. Strips everything but digits and
+ * the decimal point before converting — a bare Number(...) silently returns
+ * NaN on anything with a space/separator, which once made a hand-retyped
+ * price silently drop a whole price-list import row. */
+export function parseMoney(raw: unknown): number {
+  if (typeof raw === 'number') return raw
+  return Number(String(raw ?? '').replace(/[^\d.]/g, ''))
+}
+
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || 'NA'

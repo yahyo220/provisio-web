@@ -154,10 +154,6 @@ export const defaultOrderLineItems: OrderLineItem[] = []
 
 export const deliveryFee = 0
 
-export const orderTimeline: { titleKey: string; time: string; done: boolean }[] = []
-
-export const relatedOrders: { id: string; meta: string; amount: string; icon: 'package' | 'package-x' }[] = []
-
 /* ---------------------------------- Customers ---------------------------------- */
 
 export const customerKpis = [

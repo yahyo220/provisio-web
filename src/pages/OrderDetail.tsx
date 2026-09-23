@@ -8,14 +8,12 @@ import StatusPill from '../components/ui/StatusPill'
 import { useLanguage } from '../i18n/LanguageContext'
 import { fetchOrderFeedback, fetchOrderItems, updateOrderItemPrice, updateOrderItemQty, type OrderFeedbackRow } from '../lib/api'
 import type { OrderLineItem } from '../lib/data'
-import { orderTimeline, relatedOrders } from '../lib/data'
 import { downloadOrderExcel } from '../lib/exportOrderExcel'
 import { formatMoney } from '../lib/format'
 import { supabase } from '../lib/supabase'
 import type { OrderRow, OrderStatus, PaymentStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
-const RELATED_ICON = { package: Package, 'package-x': PackageX }
 const ORDER_STATUSES: OrderStatus[] = ['new', 'confirmed', 'preparing', 'ready', 'out', 'delivered', 'cancelled']
 
 export default function OrderDetail() {
@@ -39,9 +37,12 @@ export default function OrderDetail() {
 }
 
 function OrderDetailForm({ order }: { order: OrderRow }) {
-  const { updateOrderStatus, updateOrderPayment, customers } = useData()
+  const { updateOrderStatus, updateOrderPayment, customers, orders } = useData()
   const { t, unit } = useLanguage()
   const customer = customers.find((c) => c.id === order.customerId)
+  const relatedOrders = orders
+    .filter((o) => o.customerId === order.customerId && o.id !== order.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
   const [lineItems, setLineItems] = useState<OrderLineItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(Boolean(supabase))
@@ -318,24 +319,6 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
             </Card>
           )}
 
-          <Card>
-            <p className="section-label">{t('orderDetail.orderTimeline')}</p>
-            {orderTimeline.length === 0 && <div className="empty-state">{t('common.noData')}</div>}
-            <div className="timeline">
-              {orderTimeline.map((step) => (
-                <div className="tl-row" key={step.titleKey}>
-                  <div className="tl-marker">
-                    <div className={`tl-dot ${step.done ? '' : 'pending'}`} />
-                    <div className="tl-line" />
-                  </div>
-                  <div className={`tl-content ${step.done ? '' : 'muted'}`}>
-                    <div className="tl-title">{t(step.titleKey)}</div>
-                    <div className="tl-time">{step.time}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
         </div>
 
         <div className="detail-col">
@@ -399,25 +382,25 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
         <div className="related-list">
           {relatedOrders.length === 0 && <div className="empty-state">{t('common.noData')}</div>}
           {relatedOrders.map((related) => {
-            const Icon = RELATED_ICON[related.icon]
+            const Icon = related.status === 'cancelled' ? PackageX : Package
             return (
-              <div className="related-row" key={related.id}>
+              <Link className="related-row" to={`/orders/${related.id}`} key={related.id}>
                 <div className="related-left">
                   <div className="related-icon">
                     <Icon />
                   </div>
                   <div className="related-text">
                     <div className="related-title">
-                      {t('common.order')} {related.id}
+                      {t('common.order')} #{related.orderNumber}
                     </div>
-                    <div className="related-meta">{related.meta}</div>
+                    <div className="related-meta">{related.date}</div>
                   </div>
                 </div>
                 <div className="related-right">
-                  <span className="related-amount">{related.amount}</span>
+                  <span className="related-amount">{related.total}</span>
                   <ChevronRightIcon />
                 </div>
-              </div>
+              </Link>
             )
           })}
         </div>

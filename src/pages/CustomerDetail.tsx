@@ -54,6 +54,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
       : customer.priceTier,
   )
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [approving, setApproving] = useState(false)
   const [bankTransferEnabled, setBankTransferEnabled] = useState(customer.bankTransferEnabled)
   const [bankTransferBusy, setBankTransferBusy] = useState(false)
@@ -80,7 +82,11 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
       await updateCustomer(customer.id, {
         parentCustomerId: linkTargetId,
         approvalStatus: 'approved',
-        priceTier: customer.staffRole === 'Руководитель' ? 'with_price' : customer.priceTier,
+        // The `priceTier` state (what the admin sees selected in "Тип цены"
+        // below), not the `customer` prop — that's the last-loaded snapshot,
+        // so using it here could silently revert a tier the admin just
+        // picked but hasn't clicked "Сохранить изменения" for yet.
+        priceTier: customer.staffRole === 'Руководитель' ? 'with_price' : priceTier,
       })
       setLinkTargetId('')
     } finally {
@@ -97,9 +103,18 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
     }
   }
 
-  function handleSave() {
-    updateCustomer(customer.id, { name, contact, location, type, status: active ? 'active' : 'inactive', priceTier })
-    setSaved(true)
+  async function handleSave() {
+    if (saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await updateCustomer(customer.id, { name, contact, location, type, status: active ? 'active' : 'inactive', priceTier })
+      setSaved(true)
+    } catch {
+      setSaveError(t('common.saveFailed'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleApprove() {
@@ -161,8 +176,8 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
           </div>
         </div>
         <div className="header-actions">
-          <Button variant="primary" icon={<Check />} onClick={handleSave}>
-            {t('common.saveChanges')}
+          <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={saving}>
+            {saving ? 'Сохраняем…' : t('common.saveChanges')}
           </Button>
         </div>
       </div>
@@ -179,6 +194,21 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
           }}
         >
           {t('common.changesSaved')}
+        </div>
+      )}
+
+      {saveError && (
+        <div
+          style={{
+            background: 'rgba(192,40,40,0.08)',
+            color: 'var(--gesso-danger, #c02828)',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '12px 16px',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          {saveError}
         </div>
       )}
 

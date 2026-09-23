@@ -4,10 +4,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import LangField from '../components/ui/LangField'
+import Modal from '../components/ui/Modal'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS, placeholderImage } from '../lib/data'
 import { uploadProductPhoto } from '../lib/api'
+import { parseMoney } from '../lib/format'
 import type { ProductRow, StockStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -63,6 +65,10 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   const [stock, setStock] = useState<StockStatus>(product.stock)
   const [active, setActive] = useState(product.active)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   // `photo` = the currently *saved* image (existing hosted URL, or null if
   // there never was one / it was removed). Picking a new file doesn't touch
   // it or upload anything yet — it just previews locally (`pendingFile` +
@@ -105,6 +111,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
   }, [])
 
   async function handleSave() {
+    if (saving) return
     let image = photo ?? ''
     if (pendingFile) {
       setUploading(true)
@@ -118,31 +125,51 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
       }
       setUploading(false)
     }
-    updateProduct(product.id, {
-      name,
-      nameUzCyrl,
-      nameUzLatn,
-      nameEn,
-      description,
-      descriptionUzCyrl,
-      descriptionUzLatn,
-      descriptionEn,
-      category: productCategory,
-      price: String(Number(price || 0)),
-      priceExternal,
-      unit: selectedUnits[0] ?? product.unit,
-      units: selectedUnits,
-      unitPrices: extraUnits.map((u) => ({
-        unit: u,
-        price: unitPrices[u]?.price ?? '',
-        priceExternal: unitPrices[u]?.priceExternal ?? '',
-      })),
-      stock,
-      active,
-      image,
-      updated: 'Just now',
-    })
-    setSaved(true)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await updateProduct(product.id, {
+        name,
+        nameUzCyrl,
+        nameUzLatn,
+        nameEn,
+        description,
+        descriptionUzCyrl,
+        descriptionUzLatn,
+        descriptionEn,
+        category: productCategory,
+        // parseMoney (not a bare Number(price)) so a hand-typed thousands
+        // separator ("12 000") doesn't go NaN and silently save as 0.
+        price: String(parseMoney(price)),
+        priceExternal,
+        unit: selectedUnits[0] ?? product.unit,
+        units: selectedUnits,
+        unitPrices: extraUnits.map((u) => ({
+          unit: u,
+          price: unitPrices[u]?.price ?? '',
+          priceExternal: unitPrices[u]?.priceExternal ?? '',
+        })),
+        stock,
+        active,
+        image,
+        updated: 'Just now',
+      })
+      setSaved(true)
+    } catch {
+      setSaveError(t('common.saveFailed'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleConfirmDelete() {
+    setDeleting(true)
+    try {
+      await removeProduct(product.id)
+      navigate('/products')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   // Variant linking is immediate (not part of the Save-changes batch above)
@@ -185,18 +212,11 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
           </div>
         </div>
         <div className="header-actions">
-          <Button
-            variant="danger-text"
-            icon={<Trash2 />}
-            onClick={() => {
-              removeProduct(product.id)
-              navigate('/products')
-            }}
-          >
+          <Button variant="danger-text" icon={<Trash2 />} onClick={() => setConfirmingDelete(true)}>
             {t('productDetail.delete')}
           </Button>
-          <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={uploading}>
-            {t('common.saveChanges')}
+          <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={uploading || saving}>
+            {saving ? 'Сохраняем…' : t('common.saveChanges')}
           </Button>
         </div>
       </div>
@@ -213,6 +233,21 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
           }}
         >
           {t('common.changesSaved')}
+        </div>
+      )}
+
+      {saveError && (
+        <div
+          style={{
+            background: 'rgba(192,40,40,0.08)',
+            color: 'var(--gesso-danger, #c02828)',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '12px 16px',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          {saveError}
         </div>
       )}
 
@@ -466,8 +501,8 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
               <Link to="/products" className="btn btn-text">
                 {t('common.cancel')}
               </Link>
-              <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={uploading}>
-                {t('common.saveChanges')}
+              <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={uploading || saving}>
+                {saving ? 'Сохраняем…' : t('common.saveChanges')}
               </Button>
             </div>
           </Card>
@@ -518,6 +553,25 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
           </Card>
         </div>
       </section>
+
+      {confirmingDelete && (
+        <Modal
+          title={`Удалить «${product.name}»?`}
+          onClose={() => setConfirmingDelete(false)}
+          footer={
+            <>
+              <Button variant="text" onClick={() => setConfirmingDelete(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button variant="danger-text" onClick={handleConfirmDelete} disabled={deleting}>
+                {deleting ? 'Удаляем…' : 'Удалить'}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 14, color: 'var(--gesso-fg-muted)' }}>Если удалите, восстановить будет нельзя.</p>
+        </Modal>
+      )}
     </>
   )
 }

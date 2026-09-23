@@ -147,7 +147,7 @@ export default function Couriers() {
             </div>
             <div className="field">
               <label htmlFor="c-pass">Пароль</label>
-              <input id="c-pass" type="text" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <input id="c-pass" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             {error && <div style={{ color: '#c02828', fontSize: 13 }}>{error}</div>}
           </Card>

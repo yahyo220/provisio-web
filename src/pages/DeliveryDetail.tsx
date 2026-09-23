@@ -39,12 +39,23 @@ function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
   const [address, setAddress] = useState(delivery.address)
   const [eta, setEta] = useState(delivery.eta)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const order = orders.find((o) => o.id === delivery.orderDbId)
 
   async function handleSave() {
-    await updateDelivery(delivery.id, { driver, status, address, eta })
-    setSaved(true)
+    if (saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await updateDelivery(delivery.id, { driver, status, address, eta })
+      setSaved(true)
+    } catch {
+      setSaveError(t('common.saveFailed'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -64,8 +75,8 @@ function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
           </div>
         </div>
         <div className="header-actions">
-          <Button variant="primary" icon={<Check />} onClick={handleSave}>
-            {t('common.saveChanges')}
+          <Button variant="primary" icon={<Check />} onClick={handleSave} disabled={saving}>
+            {saving ? 'Сохраняем…' : t('common.saveChanges')}
           </Button>
         </div>
       </div>
@@ -82,6 +93,21 @@ function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
           }}
         >
           {t('common.changesSaved')}
+        </div>
+      )}
+
+      {saveError && (
+        <div
+          style={{
+            background: 'rgba(192,40,40,0.08)',
+            color: 'var(--gesso-danger, #c02828)',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '12px 16px',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          {saveError}
         </div>
       )}
 

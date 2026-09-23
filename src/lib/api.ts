@@ -1,4 +1,4 @@
-import { formatMoney, formatOrderDate, formatRelative, initialsOf } from './format'
+import { formatMoney, formatOrderDate, formatRelative, initialsOf, parseMoney } from './format'
 import { placeholderImage, type OrderLineItem } from './data'
 import { supabase } from './supabase'
 import type {
@@ -233,18 +233,22 @@ export async function updateProductRow(id: string, patch: Partial<ProductRow>) {
   const dbPatch: Record<string, unknown> = {}
   if (patch.name !== undefined) dbPatch.name = patch.name
   if (patch.category !== undefined) dbPatch.category = patch.category
-  if (patch.price !== undefined) dbPatch.price = Number(String(patch.price).replace(/[^\d.]/g, ''))
+  // parseMoney handles a value that's been hand-retyped with a thousands
+  // separator ("20 000") without silently going NaN — `|| 0`/`|| null`
+  // below only catches the rarer case (multiple decimal points) parseMoney
+  // itself can't recover from.
+  if (patch.price !== undefined) dbPatch.price = parseMoney(patch.price) || 0
   if (patch.priceExternal !== undefined) {
     const cleaned = String(patch.priceExternal).replace(/[^\d.]/g, '')
-    dbPatch.price_external = cleaned ? Number(cleaned) : null
+    dbPatch.price_external = cleaned ? parseMoney(cleaned) || null : null
   }
   if (patch.unit !== undefined) dbPatch.unit = patch.unit
   if (patch.units !== undefined) dbPatch.units = patch.units.length > 0 ? patch.units : null
   if (patch.unitPrices !== undefined) {
     dbPatch.unit_prices = patch.unitPrices.map((u) => ({
       unit: u.unit,
-      price: Number(u.price.replace(/[^\d.]/g, '')) || 0,
-      price_external: u.priceExternal.trim() ? Number(u.priceExternal.replace(/[^\d.]/g, '')) : null,
+      price: parseMoney(u.price) || 0,
+      price_external: u.priceExternal.trim() ? parseMoney(u.priceExternal) || null : null,
     }))
   }
   if (patch.variantGroupId !== undefined) dbPatch.variant_group_id = patch.variantGroupId

@@ -13,6 +13,7 @@
 import ExcelJS from 'exceljs'
 import { PRODUCT_CATEGORIES, PRODUCT_UNITS } from './data'
 import { translateCategory, translateUnit } from '../i18n/translations'
+import { parseMoney } from './format'
 import { THIN_BORDER, triggerXlsxDownload } from './xlsxShared'
 import type { ProductRow } from './types'
 
@@ -37,20 +38,6 @@ function resolveUnit(raw: string): string | null {
   return UNIT_BY_KEY.get(v) ?? UNIT_BY_RU.get(v) ?? null
 }
 
-/** A price/price-external cell's value, robustly. `downloadPriceListExcel`
- * always writes a clean number, but a re-uploaded file has usually been
- * hand-edited in Excel — retyping "20000" as "20 000" (a thousands
- * separator, sometimes a non-breaking space) turns the cell into text, and
- * `Number("20 000")` is `NaN`, not 20000. Strip everything but digits/dot
- * first, the same way the legacy CSV importer below already did — a plain
- * `Number(cell.value)` silently dropped every row someone had actually
- * retyped a price in, which is what made this import look like it had
- * stopped updating prices at all. */
-function parseMoneyCell(raw: unknown): number {
-  if (typeof raw === 'number') return raw
-  return Number(String(raw ?? '').replace(/[^\d.]/g, ''))
-}
-
 export async function downloadPriceListExcel(products: ProductRow[]) {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Товары')
@@ -67,8 +54,8 @@ export async function downloadPriceListExcel(products: ProductRow[]) {
 
   products.forEach((p, i) => {
     const r = i + 2
-    const priceNum = Number(p.price.replace(/[^\d.]/g, '')) || 0
-    const priceExtNum = Number(p.priceExternal.replace(/[^\d.]/g, '')) || null
+    const priceNum = parseMoney(p.price) || 0
+    const priceExtNum = parseMoney(p.priceExternal) || null
     const values = [p.sku, p.name, translateCategory(p.category, 'ru'), translateUnit(p.unit, 'ru'), priceNum, priceExtNum ?? '']
     values.forEach((v, col) => {
       const cell = ws.getCell(r, col + 1)
@@ -115,13 +102,17 @@ export async function parsePriceFile(file: File): Promise<ProductImportRow[]> {
   const rows: ProductImportRow[] = []
   ws.eachRow((row, rowNumber) => {
     const sku = String(row.getCell(1).value ?? '').trim()
-    if (rowNumber === 1 && (sku.toLowerCase() === 'sku' || !Number.isFinite(Number(row.getCell(5).value)))) return
+    // Same NaN-on-formatted-number footgun as the price cells below (see
+    // parseMoney) — a bare Number(...) here misidentified row 1 as a
+    // header (and silently skipped it as real data) whenever its price had
+    // been hand-retyped with a thousands separator.
+    if (rowNumber === 1 && (sku.toLowerCase() === 'sku' || !Number.isFinite(parseMoney(row.getCell(5).value)))) return
     const name = String(row.getCell(2).value ?? '').trim()
     const category = resolveCategory(String(row.getCell(3).value ?? ''))
     const unit = resolveUnit(String(row.getCell(4).value ?? ''))
-    const price = parseMoneyCell(row.getCell(5).value)
+    const price = parseMoney(row.getCell(5).value)
     const priceExternalRaw = row.getCell(6).value
-    const priceExternal = priceExternalRaw === null || priceExternalRaw === undefined || priceExternalRaw === '' ? null : parseMoneyCell(priceExternalRaw)
+    const priceExternal = priceExternalRaw === null || priceExternalRaw === undefined || priceExternalRaw === '' ? null : parseMoney(priceExternalRaw)
     // A row needs at least a SKU (to update something that already exists)
     // or a name (to be worth creating) — anything with neither is just a
     // blank spreadsheet row and is silently skipped, not reported as an error.
@@ -145,9 +136,9 @@ function parsePriceCsv(text: string): ProductImportRow[] {
       const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
       const sku = cols[0] ?? ''
       const name = cols[1] ?? ''
-      const price = Number((cols[2] ?? '').replace(/[^\d.]/g, ''))
+      const price = parseMoney(cols[2] ?? '')
       const priceExternalRaw = (cols[3] ?? '').replace(/[^\d.]/g, '')
-      return { sku, name, category: null, unit: null, price, priceExternal: priceExternalRaw ? Number(priceExternalRaw) : null }
+      return { sku, name, category: null, unit: null, price, priceExternal: priceExternalRaw ? parseMoney(priceExternalRaw) : null }
     })
     .filter((r) => (r.sku || r.name) && Number.isFinite(r.price))
 }
