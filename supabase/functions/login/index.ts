@@ -7,6 +7,13 @@
 // result to record_login_result() (0044) so 3 wrong passwords locks the
 // account until an admin unlocks it on the website.
 //
+// check_login_lock/record_login_result are service_role-only as of
+// migration 0048 (they used to be callable by anon directly, which let
+// anyone lock any account with 3 fake calls and no real password attempt)
+// — so this function needs a service-role client for just those two calls.
+// SUPABASE_SERVICE_ROLE_KEY is provided automatically for edge functions,
+// same as supabase/functions/create-account.
+//
 // Deploy with:
 //   supabase functions deploy login
 
@@ -14,6 +21,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,8 +42,9 @@ Deno.serve(async (req) => {
     if (!login || !password) return json({ error: 'login and password are required' }, 400)
 
     const db = createClient(SUPABASE_URL, ANON_KEY)
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
-    const { data: locked } = await db.rpc('check_login_lock', { p_login: login })
+    const { data: locked } = await admin.rpc('check_login_lock', { p_login: login })
     if (locked) {
       return json({ error: 'Аккаунт заблокирован после нескольких неверных попыток входа. Обратитесь в поддержку.' }, 423)
     }
@@ -51,7 +60,7 @@ Deno.serve(async (req) => {
     // Best-effort — a hiccup here must never leave the customer permanently
     // unable to log in just because this bookkeeping call failed.
     try {
-      await db.rpc('record_login_result', { p_login: login, p_success: !signInError })
+      await admin.rpc('record_login_result', { p_login: login, p_success: !signInError })
     } catch (_) {
       // ignore
     }

@@ -46,6 +46,7 @@ function ordersInRange(orders: OrderRow[], customerId: string, dateFrom: string,
   const to = new Date(`${dateTo}T23:59:59`)
   return orders
     .filter((o) => o.customerId === customerId)
+    .filter((o) => o.status !== 'cancelled')
     .filter((o) => {
       const d = new Date(o.createdAt)
       return d >= from && d <= to
