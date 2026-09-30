@@ -93,6 +93,8 @@ Deno.serve(async (req) => {
       return json({ ok: true, authUserId, driver })
     } else {
       const priceTier = (body.priceTier as string | undefined) ?? 'no_price'
+      const staffRole = (body.staffRole as string | undefined)?.trim() || null
+      const companyName = (body.companyName as string | undefined)?.trim() || null
       const { data: customer, error: custErr } = await admin
         .from('customers')
         .insert({
@@ -105,6 +107,8 @@ Deno.serve(async (req) => {
           auth_user_id: authUserId,
           approval_status: 'approved',
           price_tier: priceTier,
+          staff_role: staffRole,
+          company_name: companyName,
         })
         .select()
         .single()
