@@ -1,13 +1,17 @@
-import { ArrowLeft, Check, Mail, MapPin, Phone } from 'lucide-react'
+import { ArrowLeft, Check, Mail, MapPin, Phone, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
+import Modal from '../components/ui/Modal'
 import StatusBadge from '../components/ui/StatusBadge'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
 import type { CustomerRow } from '../lib/types'
 import { useData } from '../store/DataContext'
+
+// Same three choices as the app's registration screen.
+const STAFF_ROLES = ['Повар', 'Бармен', 'Руководитель']
 
 export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>()
@@ -36,7 +40,7 @@ const PRICE_TIER_LABEL: Record<CustomerRow['priceTier'], string> = {
 }
 
 function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
-  const { orders, customers, updateCustomer } = useData()
+  const { orders, customers, updateCustomer, addCustomer } = useData()
   const { t, customerType } = useLanguage()
 
   const [name, setName] = useState(customer.name)
@@ -63,39 +67,73 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
   const [cashBusy, setCashBusy] = useState(false)
   const [loginLockedAt, setLoginLockedAt] = useState(customer.loginLockedAt)
   const [unlocking, setUnlocking] = useState(false)
-  const [linkTargetId, setLinkTargetId] = useState('')
-  const [linking, setLinking] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
+  const [editingRole, setEditingRole] = useState(false)
+  const [roleDraft, setRoleDraft] = useState(customer.staffRole || '')
+  const [roleSaving, setRoleSaving] = useState(false)
+  const [addingRole, setAddingRole] = useState<string | null>(null)
+  const [addName, setAddName] = useState('')
+  const [addPhone, setAddPhone] = useState('')
+  const [addLogin, setAddLogin] = useState('')
+  const [addPassword, setAddPassword] = useState('')
+  const [addBusy, setAddBusy] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
 
   const customerOrders = orders.filter((o) => o.customerId === customer.id)
   const parent = customer.parentCustomerId ? customers.find((c) => c.id === customer.parentCustomerId) : undefined
-  const staff = customers.filter((c) => c.parentCustomerId === customer.id)
-  // Only other standalone clients can be link targets — keeps this a single
-  // level (no linking a client that itself already has staff, or one that's
-  // already someone else's staff).
-  const linkable = customers.filter((c) => c.id !== customer.id && !c.parentCustomerId && staff.every((s) => s.id !== c.id))
+  // The "company" this customer belongs to for staff purposes — itself if
+  // it's the top-level account, otherwise its parent. Staff resolve the
+  // same way whether you're looking at the manager's page or a cook's.
+  const root = parent ?? customer
+  const staff = customers.filter((c) => c.parentCustomerId === root.id)
+  const roleSlots = STAFF_ROLES.map((role) => ({
+    role,
+    member: root.staffRole === role ? root : staff.find((s) => s.staffRole === role),
+  }))
 
-  async function handleLink() {
-    if (!linkTargetId) return
-    setLinking(true)
+  async function handleRoleSave() {
+    setRoleSaving(true)
     try {
-      await updateCustomer(customer.id, {
-        parentCustomerId: linkTargetId,
-        // Only auto-approve a still-pending signup — linking must never
-        // silently un-suspend an account an admin had deliberately blocked,
-        // or touch one that's already approved.
-        approvalStatus: customer.approvalStatus === 'pending' ? 'approved' : customer.approvalStatus,
-        // The `priceTier` state (what the admin sees selected in "Тип цены"
-        // below), not the `customer` prop — that's the last-loaded snapshot,
-        // so using it here could silently revert a tier the admin just
-        // picked but hasn't clicked "Сохранить изменения" for yet.
-        priceTier: customer.staffRole === 'Руководитель' ? 'with_price' : priceTier,
-      })
-      setLinkTargetId('')
+      await updateCustomer(customer.id, { staffRole: roleDraft })
+      setEditingRole(false)
     } catch {
       setSaveError(t('common.saveFailed'))
     } finally {
-      setLinking(false)
+      setRoleSaving(false)
+    }
+  }
+
+  async function handleAddStaff() {
+    if (!addingRole) return
+    if (!addName.trim() || !addLogin.trim() || addPassword.length < 8) {
+      setAddError('Укажите имя, логин и пароль (минимум 8 символов).')
+      return
+    }
+    setAddBusy(true)
+    setAddError(null)
+    try {
+      await addCustomer({
+        name: addName.trim(),
+        type: root.type,
+        contact: addName.trim(),
+        phone: addPhone.trim(),
+        email: '',
+        location: root.location,
+        staffRole: addingRole,
+        priceTier: addingRole === 'Руководитель' ? 'with_price' : 'no_price',
+        login: addLogin.trim(),
+        password: addPassword,
+        parentCustomerId: root.id,
+      })
+      setAddingRole(null)
+      setAddName('')
+      setAddPhone('')
+      setAddLogin('')
+      setAddPassword('')
+    } catch (err) {
+      setAddError((err as Error).message)
+    } finally {
+      setAddBusy(false)
     }
   }
 
@@ -316,46 +354,6 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
               </div>
             )}
           </Card>
-
-          {staff.length > 0 && (
-            <Card>
-              <p className="section-label">Сотрудники</p>
-              <div className="related-list">
-                {staff.map((member) => (
-                  <Link className="related-row" to={`/customers/${member.id}`} key={member.id}>
-                    <div className="related-left">
-                      <div className="related-icon">
-                        <Phone />
-                      </div>
-                      <div className="related-text">
-                        <div className="related-title">
-                          {member.contact || member.name}
-                          {member.staffRole ? ` · ${member.staffRole}` : ''}
-                        </div>
-                        <div className="related-meta">{member.phone || '—'}</div>
-                      </div>
-                    </div>
-                    <div className="related-right">
-                      {member.approvalStatus === 'pending' && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: '#a35b00',
-                            background: 'rgba(200,130,0,0.12)',
-                            borderRadius: 'var(--gesso-radius-full)',
-                            padding: '2px 8px',
-                          }}
-                        >
-                          Ожидает
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </Card>
-          )}
         </div>
 
         <div className="detail-col">
@@ -383,35 +381,6 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
                   </Button>
                 )}
               </div>
-
-              {/* Same staff-at-one-business situation the registration
-                  screen's Должность picker is for — this login just belongs
-                  to an already-registered client instead of standing on its
-                  own. Only offered while this customer has no staff of its
-                  own (single-level linking) and isn't already linked. */}
-              {!customer.parentCustomerId && staff.length === 0 && linkable.length > 0 && (
-                <div style={{ marginTop: 16 }}>
-                  <div className="lbl">Сотрудник другой компании?</div>
-                  <div className="sub" style={{ marginBottom: 8 }}>
-                    Привяжите вместо создания отдельного клиента — заявка одобрится автоматически.
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <div className="select-wrap" style={{ flex: 1 }}>
-                      <select value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)}>
-                        <option value="">Выберите клиента…</option>
-                        {linkable.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <Button variant="ghost" onClick={handleLink} disabled={!linkTargetId || linking}>
-                      {linking ? 'Привязываем…' : 'Привязать'}
-                    </Button>
-                  </div>
-                </div>
-              )}
 
               {loginLockedAt && (
                 <div className="status-row" style={{ marginTop: 16 }}>
@@ -511,12 +480,40 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
                 </span>
                 <span className="v">{customer.email || '—'}</span>
               </div>
-              {customer.staffRole && (
-                <div className="info-row">
-                  <span className="k">Должность</span>
-                  <span className="v">{customer.staffRole}</span>
-                </div>
-              )}
+              <div className="info-row">
+                <span className="k">Должность</span>
+                {editingRole ? (
+                  <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <div className="select-wrap">
+                      <select value={roleDraft} onChange={(e) => setRoleDraft(e.target.value)}>
+                        <option value="">—</option>
+                        {STAFF_ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {role}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <Button variant="ghost" onClick={handleRoleSave} disabled={roleSaving}>
+                      {roleSaving ? 'Сохраняем…' : 'Сохранить'}
+                    </Button>
+                  </span>
+                ) : (
+                  <span className="v" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {customer.staffRole || '—'}
+                    <button
+                      type="button"
+                      className="btn btn-text"
+                      onClick={() => {
+                        setRoleDraft(customer.staffRole || '')
+                        setEditingRole(true)
+                      }}
+                    >
+                      Изменить
+                    </button>
+                  </span>
+                )}
+              </div>
             </div>
           </Card>
 
@@ -533,6 +530,72 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
           </Card>
         </div>
       </section>
+
+      <Card>
+        <p className="section-label">Сотрудники по должностям</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {roleSlots.map(({ role, member }) =>
+            member ? (
+              <Link
+                key={role}
+                to={`/customers/${member.id}`}
+                className={member.id === customer.id ? 'btn btn-primary' : 'btn btn-ghost'}
+              >
+                {role}
+                {member.approvalStatus === 'pending' ? ' · Ожидает' : ''}
+              </Link>
+            ) : (
+              <Button
+                key={role}
+                variant="ghost"
+                icon={<Plus />}
+                onClick={() => {
+                  setAddingRole(role)
+                  setAddError(null)
+                }}
+              >
+                Добавить сотрудника: {role}
+              </Button>
+            ),
+          )}
+        </div>
+      </Card>
+
+      {addingRole && (
+        <Modal
+          title={`Добавить сотрудника: ${addingRole}`}
+          onClose={() => setAddingRole(null)}
+          footer={
+            <Button variant="primary" icon={<Check />} onClick={handleAddStaff} disabled={addBusy}>
+              {addBusy ? 'Создаём…' : 'Создать аккаунт'}
+            </Button>
+          }
+        >
+          {addError && <div style={{ color: 'var(--gesso-danger, #c02828)', fontSize: 14, marginBottom: 12 }}>{addError}</div>}
+          <div className="field">
+            <label htmlFor="as-name">Имя</label>
+            <input id="as-name" type="text" value={addName} onChange={(e) => setAddName(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="as-phone">Телефон</label>
+            <input id="as-phone" type="tel" value={addPhone} onChange={(e) => setAddPhone(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="as-login">Логин</label>
+            <input id="as-login" type="text" value={addLogin} onChange={(e) => setAddLogin(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="as-password">Пароль</label>
+            <input
+              id="as-password"
+              type="password"
+              placeholder="минимум 8 символов"
+              value={addPassword}
+              onChange={(e) => setAddPassword(e.target.value)}
+            />
+          </div>
+        </Modal>
+      )}
     </>
   )
 }

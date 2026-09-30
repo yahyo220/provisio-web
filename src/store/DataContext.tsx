@@ -75,6 +75,9 @@ export interface NewCustomerInput {
   login?: string
   password?: string
   priceTier?: PriceTier
+  /** Creates this customer already linked as staff of another (see
+   * migration 0047) instead of as its own top-level client. */
+  parentCustomerId?: string
 }
 
 interface DataContextValue {
@@ -275,7 +278,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               hasLogin: Boolean(input.login && input.password),
               staffRole: input.staffRole ?? '',
               companyName: input.companyName ?? '',
-              parentCustomerId: null,
+              parentCustomerId: input.parentCustomerId ?? null,
               bankTransferEnabled: false,
               bankTransferRequested: false,
               cashEnabled: false,
@@ -299,6 +302,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             password: input.password,
             staffRole: input.staffRole,
             priceTier: input.priceTier,
+            parentCustomerId: input.parentCustomerId,
           })
         } else {
           await insertCustomer(input)

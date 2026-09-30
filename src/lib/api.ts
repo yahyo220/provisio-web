@@ -398,6 +398,7 @@ export async function createCustomerAccount(input: {
   password: string
   staffRole?: string
   priceTier?: string
+  parentCustomerId?: string
 }) {
   const db = assertClient()
   const { data: sessionData } = await db.auth.getSession()
@@ -416,6 +417,7 @@ export async function createCustomerAccount(input: {
       password: input.password,
       staffRole: input.staffRole,
       priceTier: input.priceTier,
+      parentCustomerId: input.parentCustomerId,
     },
   })
   if (error) throw error
