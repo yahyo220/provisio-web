@@ -9,6 +9,8 @@ import Customers from './pages/Customers'
 import Dashboard from './pages/Dashboard'
 import DeliveryDetail from './pages/DeliveryDetail'
 import Deliveries from './pages/Deliveries'
+import DeleteAccount from './pages/legal/DeleteAccount'
+import PrivacyPolicy from './pages/legal/PrivacyPolicy'
 import Login from './pages/Login'
 import OrderDetail from './pages/OrderDetail'
 import Orders from './pages/Orders'
@@ -20,6 +22,19 @@ import { DataProvider } from './store/DataContext'
 import { useAuth } from './store/AuthContext'
 
 function App() {
+  return (
+    <Routes>
+      {/* Public — no login wall. Google Play's own crawler (privacy policy
+          and account-deletion URLs) and end users both need these to load
+          with no auth check at all, unlike everything under AppLayout. */}
+      <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+      <Route path="/legal/delete-account" element={<DeleteAccount />} />
+      <Route path="/*" element={<AuthenticatedApp />} />
+    </Routes>
+  )
+}
+
+function AuthenticatedApp() {
   const { ready, session, isAdmin } = useAuth()
 
   // No backend configured at all (local dev without env vars) — behave like
