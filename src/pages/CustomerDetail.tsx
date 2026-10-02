@@ -12,6 +12,15 @@ import { setCustomerPassword } from '../lib/api'
 import type { CustomerRow } from '../lib/types'
 import { useData } from '../store/DataContext'
 
+// Skips look-alike characters (0/O, 1/l/I) so a password read out loud or
+// typed from a screenshot doesn't get mistyped.
+function generatePassword(length = 10) {
+  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const bytes = new Uint32Array(length)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('')
+}
+
 // Same three choices as the app's registration screen.
 const STAFF_ROLES = ['Повар', 'Бармен', 'Руководитель']
 
@@ -734,6 +743,27 @@ function PersonPanel({ person }: { person: CustomerRow }) {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              <button
+                type="button"
+                disabled={credsBusy}
+                onClick={() => {
+                  setNewPassword(generatePassword())
+                  setShowPassword(true)
+                  setCredsMsg(null)
+                }}
+                style={{
+                  marginTop: 8,
+                  padding: 0,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--gesso-accent)',
+                }}
+              >
+                Сгенерировать пароль
+              </button>
             </div>
             {credsMsg && (
               <div
