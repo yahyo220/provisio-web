@@ -11,6 +11,7 @@ import DeliveryDetail from './pages/DeliveryDetail'
 import Deliveries from './pages/Deliveries'
 import DeleteAccount from './pages/legal/DeleteAccount'
 import PrivacyPolicy from './pages/legal/PrivacyPolicy'
+import SupportPage from './pages/legal/SupportPage'
 import Login from './pages/Login'
 import OrderDetail from './pages/OrderDetail'
 import Orders from './pages/Orders'
@@ -29,6 +30,7 @@ function App() {
           with no auth check at all, unlike everything under AppLayout. */}
       <Route path="/legal/privacy" element={<PrivacyPolicy />} />
       <Route path="/legal/delete-account" element={<DeleteAccount />} />
+      <Route path="/legal/support" element={<SupportPage />} />
       <Route path="/*" element={<AuthenticatedApp />} />
     </Routes>
   )
