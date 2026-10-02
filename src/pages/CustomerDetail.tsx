@@ -99,7 +99,7 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
     setAddBusy(true)
     setAddError(null)
     try {
-      await addCustomer({
+      const newId = await addCustomer({
         name: fullName,
         type: root.type,
         contact: fullName,
@@ -112,6 +112,12 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
         password: addPassword,
         parentCustomerId: root.id,
       })
+      // Belt-and-suspenders: the edge function already sets these on
+      // insert, but this guarantees it regardless — the alternative is a
+      // staff account that silently lands as its own top-level client.
+      if (newId) {
+        await updateCustomer(newId, { parentCustomerId: root.id, approvalStatus: 'approved' })
+      }
       setAddOpen(false)
       setAddFirstName('')
       setAddLastName('')

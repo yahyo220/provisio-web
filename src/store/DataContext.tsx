@@ -102,7 +102,10 @@ interface DataContextValue {
   removeOrder: (id: string) => Promise<void>
 
   customers: CustomerRow[]
-  addCustomer: (input: NewCustomerInput) => Promise<void>
+  /** Returns the new row's id (connected mode only) so a caller that needs
+   * to guarantee something about it — see Customer detail's add-staff
+   * flow — can follow up with its own updateCustomer call. */
+  addCustomer: (input: NewCustomerInput) => Promise<string | undefined>
   updateCustomer: (id: string, patch: Partial<CustomerRow>) => Promise<void>
 
   deliveries: DeliveryRow[]
@@ -290,10 +293,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
             },
             ...prev,
           ])
-          return
+          return undefined
         }
+        let newId: string | undefined
         if (input.login && input.password) {
-          await createCustomerAccount({
+          const result = await createCustomerAccount({
             name: input.name,
             companyName: input.companyName,
             type: input.type,
@@ -306,10 +310,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
             priceTier: input.priceTier,
             parentCustomerId: input.parentCustomerId,
           })
+          newId = (result?.customer as { id?: string } | undefined)?.id
         } else {
           await insertCustomer(input)
         }
         await refresh()
+        return newId
       },
       updateCustomer: async (id, patch) => {
         if (!connected) {
