@@ -56,7 +56,7 @@ export default function CustomerDetail() {
 }
 
 function CustomerDetailForm({ root }: { root: CustomerRow }) {
-  const { customers, orders, updateCustomer, addCustomer } = useData()
+  const { customers, orders, driverRows, updateCustomer, addCustomer } = useData()
   const { t, customerType } = useLanguage()
 
   // Company-level fields — always the root account's, regardless of which
@@ -65,6 +65,7 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
   const [name, setName] = useState(root.name)
   const [location, setLocation] = useState(root.location)
   const [type, setType] = useState(root.type)
+  const [defaultDriverId, setDefaultDriverId] = useState(root.defaultDriverId ?? '')
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -151,7 +152,15 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
     setSaving(true)
     setSaveError(null)
     try {
-      await updateCustomer(root.id, { name, location, type })
+      // Only sent when changed, so saving the other fields never depends on
+      // the default_driver_id column being there.
+      const driverChanged = defaultDriverId !== (root.defaultDriverId ?? '')
+      await updateCustomer(root.id, {
+        name,
+        location,
+        type,
+        ...(driverChanged ? { defaultDriverId: defaultDriverId || null } : {}),
+      })
       setSaved(true)
     } catch {
       setSaveError(t('common.saveFailed'))
@@ -317,6 +326,26 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
             <div className="field">
               <label htmlFor="cd-loc">{t('common.location')}</label>
               <input id="cd-loc" type="text" value={location} onChange={(e) => setLocation(e.target.value)} />
+            </div>
+
+            <div className="field">
+              <label htmlFor="cd-driver">Доставщик</label>
+              <div className="select-wrap">
+                <select id="cd-driver" value={defaultDriverId} onChange={(e) => setDefaultDriverId(e.target.value)}>
+                  <option value="">Не выбран — назначать вручную</option>
+                  {driverRows
+                    .filter((d) => d.active || d.id === defaultDriverId)
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                        {d.active ? '' : ' (не на смене)'}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--gesso-fg-muted)' }}>
+                Новые заказы этого клиента и его сотрудников сразу попадут к этому доставщику.
+              </p>
             </div>
           </Card>
 

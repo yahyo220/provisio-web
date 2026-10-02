@@ -162,6 +162,7 @@ export async function fetchAll(): Promise<FetchedData> {
     loginLockedAt: row.login_locked_at ?? null,
     hasLogin: Boolean(row.auth_user_id),
     login: row.login || '',
+    defaultDriverId: row.default_driver_id ?? null,
     createdAt: row.created_at,
   }))
 
@@ -367,6 +368,7 @@ export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>)
   }
   if (patch.parentCustomerId !== undefined) dbPatch.parent_customer_id = patch.parentCustomerId
   if (patch.login !== undefined) dbPatch.login = patch.login.trim() || null
+  if (patch.defaultDriverId !== undefined) dbPatch.default_driver_id = patch.defaultDriverId
   const { error } = await db.from('customers').update(dbPatch).eq('id', id)
   if (error) throw error
 }
