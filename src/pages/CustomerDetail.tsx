@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Mail, MapPin, Phone, Plus } from 'lucide-react'
+import { ArrowLeft, Check, Eye, EyeOff, Mail, MapPin, Phone, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -8,6 +8,7 @@ import Modal from '../components/ui/Modal'
 import StatusBadge from '../components/ui/StatusBadge'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
+import { setCustomerPassword } from '../lib/api'
 import type { CustomerRow } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -394,6 +395,52 @@ function PersonPanel({ person }: { person: CustomerRow }) {
   // do nothing, so they aren't shown.
   const inheritsPayment = Boolean(person.parentCustomerId) && person.staffRole !== 'Руководитель'
 
+  const [login, setLogin] = useState(person.login)
+  const [newPassword, setNewPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [credsBusy, setCredsBusy] = useState(false)
+  const [credsMsg, setCredsMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  async function handleSaveCredentials() {
+    const nextLogin = login.trim()
+    const loginChanged = nextLogin !== person.login
+    if (!nextLogin) {
+      setCredsMsg({ ok: false, text: 'Логин не может быть пустым.' })
+      return
+    }
+    if (newPassword && newPassword.length < 8) {
+      setCredsMsg({ ok: false, text: 'Пароль — минимум 8 символов.' })
+      return
+    }
+    if (!loginChanged && !newPassword) {
+      setCredsMsg({ ok: false, text: 'Нечего сохранять: измените логин или введите новый пароль.' })
+      return
+    }
+
+    setCredsBusy(true)
+    setCredsMsg(null)
+    let loginSaved = false
+    try {
+      if (loginChanged) {
+        await updateCustomer(person.id, { login: nextLogin })
+        loginSaved = true
+      }
+      if (newPassword) await setCustomerPassword(person.id, newPassword)
+      setNewPassword('')
+      setCredsMsg({
+        ok: true,
+        text: loginChanged && newPassword ? 'Логин и пароль сохранены.' : loginChanged ? 'Логин сохранён.' : 'Пароль сохранён.',
+      })
+    } catch (err) {
+      const e = err as { message?: string; code?: string }
+      const taken = e.code === '23505' || /already in use|duplicate/i.test(e.message ?? '')
+      const reason = taken ? 'Этот логин уже занят — выберите другой.' : e.message || t('common.saveFailed')
+      setCredsMsg({ ok: false, text: loginSaved ? `Логин сохранён, но пароль изменить не удалось: ${reason}` : reason })
+    } finally {
+      setCredsBusy(false)
+    }
+  }
+
   async function handleContactBlur() {
     const trimmed = contact.trim()
     if (trimmed === person.contact) return
@@ -640,6 +687,71 @@ function PersonPanel({ person }: { person: CustomerRow }) {
             <span className="v">{person.staffRole || 'Руководитель'}</span>
           </div>
         </div>
+
+        {person.hasLogin && (
+          <div style={{ marginTop: 16 }}>
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label htmlFor="pc-login">Логин</label>
+              <input
+                id="pc-login"
+                type="text"
+                autoComplete="off"
+                value={login}
+                onChange={(e) => setLogin(e.target.value)}
+                disabled={credsBusy}
+              />
+            </div>
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label htmlFor="pc-password">Новый пароль</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="pc-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  placeholder="оставьте пустым, чтобы не менять"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={credsBusy}
+                  style={{ paddingRight: 44 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                  style={{
+                    position: 'absolute',
+                    right: 10,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--gesso-fg-muted)',
+                    display: 'flex',
+                    padding: 4,
+                  }}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+            {credsMsg && (
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  marginBottom: 12,
+                  color: credsMsg.ok ? 'var(--gesso-accent)' : 'var(--gesso-danger, #c02828)',
+                }}
+              >
+                {credsMsg.text}
+              </div>
+            )}
+            <Button variant="primary" icon={<Check />} onClick={handleSaveCredentials} disabled={credsBusy}>
+              {credsBusy ? 'Сохраняем…' : 'Сохранить логин и пароль'}
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   )

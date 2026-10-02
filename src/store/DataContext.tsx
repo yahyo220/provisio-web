@@ -281,6 +281,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               approvalStatus: 'approved',
               priceTier: input.priceTier ?? 'with_price',
               hasLogin: Boolean(input.login && input.password),
+              login: input.login ?? '',
               staffRole: input.staffRole ?? '',
               companyName: input.companyName ?? '',
               parentCustomerId: input.parentCustomerId ?? null,

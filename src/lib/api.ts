@@ -161,6 +161,7 @@ export async function fetchAll(): Promise<FetchedData> {
     cashRequested: Boolean(row.cash_requested),
     loginLockedAt: row.login_locked_at ?? null,
     hasLogin: Boolean(row.auth_user_id),
+    login: row.login || '',
     createdAt: row.created_at,
   }))
 
@@ -365,8 +366,24 @@ export async function updateCustomerRow(id: string, patch: Partial<CustomerRow>)
     dbPatch.failed_login_attempts = 0
   }
   if (patch.parentCustomerId !== undefined) dbPatch.parent_customer_id = patch.parentCustomerId
+  if (patch.login !== undefined) dbPatch.login = patch.login.trim() || null
   const { error } = await db.from('customers').update(dbPatch).eq('id', id)
   if (error) throw error
+}
+
+/** Sets a new password for a customer's login, via the `set-account-password`
+ * edge function (needs the service-role key, which never reaches the browser).
+ * Only succeeds if the caller is signed in as an admin. */
+export async function setCustomerPassword(customerId: string, password: string) {
+  const db = assertClient()
+  const { data: sessionData } = await db.auth.getSession()
+  if (!sessionData.session) throw new Error('Not signed in.')
+
+  const { data, error } = await db.functions.invoke('set-account-password', {
+    body: { customerId, password },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
 }
 
 /** Calls the `create-account` edge function (service-role) to give a courier

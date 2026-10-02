@@ -110,6 +110,8 @@ export interface CustomerRow {
   approvalStatus: ApprovalStatus
   priceTier: PriceTier
   hasLogin: boolean
+  /** The username this person signs in to the app with (blank if none set). */
+  login: string
   /** One of the app registration screen's fixed choices — "Повар", "Бармен",
    * "Руководитель" — or blank for a login created some other way (e.g. the
    * website's own "add customer login"). Informational except as a hint for
