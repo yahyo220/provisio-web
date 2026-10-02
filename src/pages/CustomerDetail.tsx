@@ -389,6 +389,11 @@ function PersonPanel({ person }: { person: CustomerRow }) {
   const [unlocking, setUnlocking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Linked staff (Повар/Бармен) are paid for however their company's
+  // Руководитель is set up (see migration 0056) — their own switches would
+  // do nothing, so they aren't shown.
+  const inheritsPayment = Boolean(person.parentCustomerId) && person.staffRole !== 'Руководитель'
+
   async function handleContactBlur() {
     const trimmed = contact.trim()
     if (trimmed === person.contact) return
@@ -551,33 +556,44 @@ function PersonPanel({ person }: { person: CustomerRow }) {
             </div>
           </div>
 
-          <div className="status-row" style={{ marginTop: 16 }}>
-            <div>
-              <div className="lbl">Оплата «Перечисление»</div>
-              <div className="sub">
-                {person.bankTransferRequested && !bankTransferEnabled
-                  ? 'Клиент запросил доступ в приложении.'
-                  : bankTransferEnabled
-                    ? 'Может выбрать этот способ оплаты при заказе.'
-                    : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
+          {inheritsPayment ? (
+            <div className="status-row" style={{ marginTop: 16 }}>
+              <div>
+                <div className="lbl">Способ оплаты</div>
+                <div className="sub">Как у руководителя — выбрать самостоятельно сотрудник не может. Меняется в профиле руководителя.</div>
               </div>
             </div>
-            <Switch checked={bankTransferEnabled} onChange={handleBankTransferToggle} label="Оплата «Перечисление»" disabled={bankTransferBusy} />
-          </div>
+          ) : (
+            <>
+              <div className="status-row" style={{ marginTop: 16 }}>
+                <div>
+                  <div className="lbl">Оплата «Перечисление»</div>
+                  <div className="sub">
+                    {person.bankTransferRequested && !bankTransferEnabled
+                      ? 'Клиент запросил доступ в приложении.'
+                      : bankTransferEnabled
+                        ? 'Может выбрать этот способ оплаты при заказе.'
+                        : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
+                  </div>
+                </div>
+                <Switch checked={bankTransferEnabled} onChange={handleBankTransferToggle} label="Оплата «Перечисление»" disabled={bankTransferBusy} />
+              </div>
 
-          <div className="status-row" style={{ marginTop: 16 }}>
-            <div>
-              <div className="lbl">Оплата наличными курьеру</div>
-              <div className="sub">
-                {person.cashRequested && !cashEnabled
-                  ? 'Клиент запросил доступ в приложении.'
-                  : cashEnabled
-                    ? 'Может выбрать этот способ оплаты при заказе.'
-                    : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
+              <div className="status-row" style={{ marginTop: 16 }}>
+                <div>
+                  <div className="lbl">Оплата наличными курьеру</div>
+                  <div className="sub">
+                    {person.cashRequested && !cashEnabled
+                      ? 'Клиент запросил доступ в приложении.'
+                      : cashEnabled
+                        ? 'Может выбрать этот способ оплаты при заказе.'
+                        : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
+                  </div>
+                </div>
+                <Switch checked={cashEnabled} onChange={handleCashToggle} label="Оплата наличными курьеру" disabled={cashBusy} />
               </div>
-            </div>
-            <Switch checked={cashEnabled} onChange={handleCashToggle} label="Оплата наличными курьеру" disabled={cashBusy} />
-          </div>
+            </>
+          )}
         </Card>
       )}
 
