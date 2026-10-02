@@ -322,8 +322,6 @@ export async function insertCustomer(customer: {
   type: string
   contact: string
   location: string
-  phone: string
-  email: string
 }) {
   const db = assertClient()
   const { error } = await db.from('customers').insert({
@@ -331,8 +329,6 @@ export async function insertCustomer(customer: {
     type: customer.type,
     contact: customer.contact,
     location: customer.location,
-    phone: customer.phone,
-    email: customer.email,
     status: 'active',
   })
   if (error) throw error
@@ -378,47 +374,6 @@ export async function createCourierAccount(input: { name: string; phone: string;
 
   const { data, error } = await db.functions.invoke('create-account', {
     body: { role: 'courier', name: input.name, phone: input.phone, login: input.login, password: input.password },
-  })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error)
-  return data
-}
-
-/** Same edge function as `createCourierAccount`, for the "customer" role —
- * gives a client a real login (approved immediately) instead of the
- * login-less reference row `insertCustomer` creates. */
-export async function createCustomerAccount(input: {
-  name: string
-  companyName?: string
-  type: string
-  phone: string
-  email?: string
-  location: string
-  login: string
-  password: string
-  staffRole?: string
-  priceTier?: string
-  parentCustomerId?: string
-}) {
-  const db = assertClient()
-  const { data: sessionData } = await db.auth.getSession()
-  if (!sessionData.session) throw new Error('Not signed in.')
-
-  const { data, error } = await db.functions.invoke('create-account', {
-    body: {
-      role: 'customer',
-      name: input.name,
-      companyName: input.companyName,
-      type: input.type,
-      phone: input.phone,
-      email: input.email,
-      location: input.location,
-      login: input.login,
-      password: input.password,
-      staffRole: input.staffRole,
-      priceTier: input.priceTier,
-      parentCustomerId: input.parentCustomerId,
-    },
   })
   if (error) throw error
   if (data?.error) throw new Error(data.error)
