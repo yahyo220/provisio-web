@@ -83,6 +83,7 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
   const [addRole, setAddRole] = useState(emptyRoles[0] ?? STAFF_ROLES[0])
   const [addFirstName, setAddFirstName] = useState('')
   const [addLastName, setAddLastName] = useState('')
+  const [addPhone, setAddPhone] = useState('')
   const [addEmail, setAddEmail] = useState('')
   const [addLogin, setAddLogin] = useState('')
   const [addPassword, setAddPassword] = useState('')
@@ -102,7 +103,7 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
         name: fullName,
         type: root.type,
         contact: fullName,
-        phone: '',
+        phone: addPhone.trim(),
         email: addEmail.trim(),
         location: root.location,
         staffRole: addRole,
@@ -114,6 +115,7 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
       setAddOpen(false)
       setAddFirstName('')
       setAddLastName('')
+      setAddPhone('')
       setAddEmail('')
       setAddLogin('')
       setAddPassword('')
@@ -254,9 +256,15 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
               <input id="as-last" type="text" value={addLastName} onChange={(e) => setAddLastName(e.target.value)} />
             </div>
           </div>
-          <div className="field">
-            <label htmlFor="as-email">Email</label>
-            <input id="as-email" type="email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} />
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="as-phone">Телефон</label>
+              <input id="as-phone" type="tel" placeholder="+998 90 123 45 67" value={addPhone} onChange={(e) => setAddPhone(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="as-email">Email</label>
+              <input id="as-email" type="email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} />
+            </div>
           </div>
           <div className="field">
             <label htmlFor="as-login">Логин</label>
