@@ -50,9 +50,9 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
   const { t, customerType } = useLanguage()
 
   // Company-level fields — always the root account's, regardless of which
-  // person is selected below.
+  // person is selected below. Contact person is NOT here — that's
+  // whoever's picked in the dropdown, so it lives in PersonPanel instead.
   const [name, setName] = useState(root.name)
-  const [contact, setContact] = useState(root.contact)
   const [location, setLocation] = useState(root.location)
   const [type, setType] = useState(root.type)
   const [saved, setSaved] = useState(false)
@@ -135,7 +135,7 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
     setSaving(true)
     setSaveError(null)
     try {
-      await updateCustomer(root.id, { name, contact, location, type })
+      await updateCustomer(root.id, { name, location, type })
       setSaved(true)
     } catch {
       setSaveError(t('common.saveFailed'))
@@ -293,15 +293,9 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
               <input id="cd-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
 
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="cd-type">{t('common.type')}</label>
-                <input id="cd-type" type="text" value={type} onChange={(e) => setType(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="cd-contact">{t('customerDetail.contactPerson')}</label>
-                <input id="cd-contact" type="text" value={contact} onChange={(e) => setContact(e.target.value)} />
-              </div>
+            <div className="field">
+              <label htmlFor="cd-type">{t('common.type')}</label>
+              <input id="cd-type" type="text" value={type} onChange={(e) => setType(e.target.value)} />
             </div>
 
             <div className="field">
@@ -374,6 +368,8 @@ function PersonPanel({ person }: { person: CustomerRow }) {
   const { updateCustomer } = useData()
   const { t } = useLanguage()
 
+  const [contact, setContact] = useState(person.contact)
+  const [contactBusy, setContactBusy] = useState(false)
   const [active, setActive] = useState(person.status === 'active')
   const [activeBusy, setActiveBusy] = useState(false)
   const [priceTier, setPriceTier] = useState(person.priceTier)
@@ -386,6 +382,20 @@ function PersonPanel({ person }: { person: CustomerRow }) {
   const [loginLockedAt, setLoginLockedAt] = useState(person.loginLockedAt)
   const [unlocking, setUnlocking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  async function handleContactBlur() {
+    const trimmed = contact.trim()
+    if (trimmed === person.contact) return
+    setContactBusy(true)
+    try {
+      await updateCustomer(person.id, { contact: trimmed })
+    } catch {
+      setContact(person.contact)
+      setError(t('common.saveFailed'))
+    } finally {
+      setContactBusy(false)
+    }
+  }
 
   async function handleActiveToggle(next: boolean) {
     setActiveBusy(true)
@@ -577,6 +587,17 @@ function PersonPanel({ person }: { person: CustomerRow }) {
 
       <Card>
         <p className="section-label">{t('common.contact')}</p>
+        <div className="field" style={{ marginBottom: 12 }}>
+          <label htmlFor="pc-contact">{t('customerDetail.contactPerson')}</label>
+          <input
+            id="pc-contact"
+            type="text"
+            value={contact}
+            onChange={(e) => setContact(e.target.value)}
+            onBlur={handleContactBlur}
+            disabled={contactBusy}
+          />
+        </div>
         <div className="info-list">
           <div className="info-row">
             <span className="k">
