@@ -322,8 +322,8 @@ export async function insertCustomer(customer: {
   type: string
   contact: string
   location: string
-  phone: string
-  email: string
+  phone?: string
+  email?: string
 }) {
   const db = assertClient()
   const { error } = await db.from('customers').insert({
@@ -331,8 +331,8 @@ export async function insertCustomer(customer: {
     type: customer.type,
     contact: customer.contact,
     location: customer.location,
-    phone: customer.phone,
-    email: customer.email,
+    phone: customer.phone ?? '',
+    email: customer.email ?? '',
     status: 'active',
   })
   if (error) throw error
@@ -391,7 +391,7 @@ export async function createCustomerAccount(input: {
   name: string
   companyName?: string
   type: string
-  phone: string
+  phone?: string
   email?: string
   location: string
   login: string

@@ -65,8 +65,10 @@ export interface NewCustomerInput {
   type: string
   contact: string
   location: string
-  phone: string
-  email: string
+  /** Only the staff-creation modal on Customer detail collects these —
+   * Add Customer's plain reference-row form doesn't ask for either. */
+  phone?: string
+  email?: string
   companyName?: string
   /** One of the app registration screen's three choices, or blank. */
   staffRole?: string
@@ -266,8 +268,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
               name: input.name,
               type: input.type,
               contact: input.contact,
-              phone: input.phone,
-              email: input.email,
+              phone: input.phone ?? '',
+              email: input.email ?? '',
               location: input.location,
               orders: 0,
               spent: '$0.00',
