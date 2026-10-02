@@ -19,6 +19,10 @@ interface DropdownProps {
   /** Visual style of the trigger button — matches the surrounding toolbar. */
   variant?: 'chip' | 'pill'
   align?: 'left' | 'right'
+  /** For a required single-select (always one real option chosen, no "all"
+   * state) — hides the allLabel row from the menu. `allLabel` is then only
+   * a fallback trigger label for the moment before `value` is set. */
+  hideAllOption?: boolean
 }
 
 export default function Dropdown({
@@ -29,6 +33,7 @@ export default function Dropdown({
   icon,
   variant = 'chip',
   align = 'left',
+  hideAllOption = false,
 }: DropdownProps) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null)
@@ -95,18 +100,20 @@ export default function Dropdown({
             role="listbox"
             style={{ position: 'fixed', top: pos.top, left: pos.left, right: pos.right }}
           >
-            <button
-              type="button"
-              className="dropdown-item"
-              role="option"
-              aria-selected={!value}
-              onClick={() => {
-                onChange(null)
-                setOpen(false)
-              }}
-            >
-              {allLabel}
-            </button>
+            {!hideAllOption && (
+              <button
+                type="button"
+                className="dropdown-item"
+                role="option"
+                aria-selected={!value}
+                onClick={() => {
+                  onChange(null)
+                  setOpen(false)
+                }}
+              >
+                {allLabel}
+              </button>
+            )}
             {options.map((opt) => (
               <button
                 key={opt.value}

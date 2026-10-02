@@ -1,13 +1,24 @@
-import { ArrowLeft, Check, Mail, MapPin, Phone } from 'lucide-react'
+import { ArrowLeft, Check, Mail, MapPin, Phone, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
+import Dropdown from '../components/ui/Dropdown'
+import Modal from '../components/ui/Modal'
 import StatusBadge from '../components/ui/StatusBadge'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
 import type { CustomerRow } from '../lib/types'
 import { useData } from '../store/DataContext'
+
+// Same three choices as the app's registration screen.
+const STAFF_ROLES = ['Повар', 'Бармен', 'Руководитель']
+
+const PRICE_TIER_LABEL: Record<CustomerRow['priceTier'], string> = {
+  with_price: 'С ценой',
+  no_price: 'Без цены (скрыта)',
+  external: 'Для внешних клиентов',
+}
 
 export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>()
@@ -26,87 +37,90 @@ export default function CustomerDetail() {
     )
   }
 
-  return <CustomerDetailForm key={customer.id} customer={customer} />
+  // This page is always framed as the company's (top-level) page — a staff
+  // member's own row only ever supplies which person the selector below
+  // starts on, never its own separate page identity.
+  const root = customer.parentCustomerId ? (customers.find((c) => c.id === customer.parentCustomerId) ?? customer) : customer
+
+  return <CustomerDetailForm key={root.id} root={root} />
 }
 
-const PRICE_TIER_LABEL: Record<CustomerRow['priceTier'], string> = {
-  with_price: 'С ценой',
-  no_price: 'Без цены (скрыта)',
-  external: 'Для внешних клиентов',
-}
-
-function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
-  const { orders, customers, updateCustomer } = useData()
+function CustomerDetailForm({ root }: { root: CustomerRow }) {
+  const { customers, orders, updateCustomer, addCustomer } = useData()
   const { t, customerType } = useLanguage()
 
-  const [name, setName] = useState(customer.name)
-  const [contact, setContact] = useState(customer.contact)
-  const [location, setLocation] = useState(customer.location)
-  const [type, setType] = useState(customer.type)
-  const [active, setActive] = useState(customer.status === 'active')
-  // "Руководитель" is the one staff_role that should see prices — pre-select
-  // it for a still-pending signup so the common case needs no extra click,
-  // without taking the choice away from the admin (still just the same
-  // select, still saved by the same "Одобрить" click).
-  const [priceTier, setPriceTier] = useState(
-    customer.approvalStatus !== 'approved' && customer.staffRole === 'Руководитель' && customer.priceTier === 'no_price'
-      ? 'with_price'
-      : customer.priceTier,
-  )
+  // Company-level fields — always the root account's, regardless of which
+  // person is selected below.
+  const [name, setName] = useState(root.name)
+  const [contact, setContact] = useState(root.contact)
+  const [location, setLocation] = useState(root.location)
+  const [type, setType] = useState(root.type)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [approving, setApproving] = useState(false)
-  const [bankTransferEnabled, setBankTransferEnabled] = useState(customer.bankTransferEnabled)
-  const [bankTransferBusy, setBankTransferBusy] = useState(false)
-  const [cashEnabled, setCashEnabled] = useState(customer.cashEnabled)
-  const [cashBusy, setCashBusy] = useState(false)
-  const [loginLockedAt, setLoginLockedAt] = useState(customer.loginLockedAt)
-  const [unlocking, setUnlocking] = useState(false)
-  const [linkTargetId, setLinkTargetId] = useState('')
-  const [linking, setLinking] = useState(false)
-  const [unlinking, setUnlinking] = useState(false)
 
-  const customerOrders = orders.filter((o) => o.customerId === customer.id)
-  const parent = customer.parentCustomerId ? customers.find((c) => c.id === customer.parentCustomerId) : undefined
-  const staff = customers.filter((c) => c.parentCustomerId === customer.id)
-  // Only other standalone clients can be link targets — keeps this a single
-  // level (no linking a client that itself already has staff, or one that's
-  // already someone else's staff).
-  const linkable = customers.filter((c) => c.id !== customer.id && !c.parentCustomerId && staff.every((s) => s.id !== c.id))
+  const staff = customers.filter((c) => c.parentCustomerId === root.id)
+  const group = [root, ...staff]
+  const groupIds = new Set(group.map((m) => m.id))
+  // Orders belong to whichever company a staff member works for, not to
+  // their own login — so the company's order history and totals are
+  // pooled across root + staff, not shown separately per person.
+  const groupOrders = orders.filter((o) => o.customerId && groupIds.has(o.customerId))
+  const totalSpentRaw = groupOrders.reduce((sum, o) => sum + o.totalRaw, 0)
 
-  async function handleLink() {
-    if (!linkTargetId) return
-    setLinking(true)
-    try {
-      await updateCustomer(customer.id, {
-        parentCustomerId: linkTargetId,
-        // Only auto-approve a still-pending signup — linking must never
-        // silently un-suspend an account an admin had deliberately blocked,
-        // or touch one that's already approved.
-        approvalStatus: customer.approvalStatus === 'pending' ? 'approved' : customer.approvalStatus,
-        // The `priceTier` state (what the admin sees selected in "Тип цены"
-        // below), not the `customer` prop — that's the last-loaded snapshot,
-        // so using it here could silently revert a tier the admin just
-        // picked but hasn't clicked "Сохранить изменения" for yet.
-        priceTier: customer.staffRole === 'Руководитель' ? 'with_price' : priceTier,
-      })
-      setLinkTargetId('')
-    } catch {
-      setSaveError(t('common.saveFailed'))
-    } finally {
-      setLinking(false)
+  // Always defaults to the manager/root — not whichever person's URL
+  // happened to be opened.
+  const [selectedId, setSelectedId] = useState(root.id)
+  const selected = group.find((m) => m.id === selectedId) ?? root
+
+  const roleSlots = STAFF_ROLES.map((role) => ({
+    role,
+    member: root.staffRole === role ? root : staff.find((s) => s.staffRole === role),
+  }))
+  const emptyRoles = roleSlots.filter((s) => !s.member).map((s) => s.role)
+
+  const [addOpen, setAddOpen] = useState(false)
+  const [addRole, setAddRole] = useState(emptyRoles[0] ?? STAFF_ROLES[0])
+  const [addFirstName, setAddFirstName] = useState('')
+  const [addLastName, setAddLastName] = useState('')
+  const [addEmail, setAddEmail] = useState('')
+  const [addLogin, setAddLogin] = useState('')
+  const [addPassword, setAddPassword] = useState('')
+  const [addBusy, setAddBusy] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+
+  async function handleAddStaff() {
+    const fullName = `${addFirstName.trim()} ${addLastName.trim()}`.trim()
+    if (!fullName || !addLogin.trim() || addPassword.length < 8) {
+      setAddError('Укажите имя, фамилию, логин и пароль (минимум 8 символов).')
+      return
     }
-  }
-
-  async function handleUnlink() {
-    setUnlinking(true)
+    setAddBusy(true)
+    setAddError(null)
     try {
-      await updateCustomer(customer.id, { parentCustomerId: null })
-    } catch {
-      setSaveError(t('common.saveFailed'))
+      await addCustomer({
+        name: fullName,
+        type: root.type,
+        contact: fullName,
+        phone: '',
+        email: addEmail.trim(),
+        location: root.location,
+        staffRole: addRole,
+        priceTier: addRole === 'Руководитель' ? 'with_price' : 'no_price',
+        login: addLogin.trim(),
+        password: addPassword,
+        parentCustomerId: root.id,
+      })
+      setAddOpen(false)
+      setAddFirstName('')
+      setAddLastName('')
+      setAddEmail('')
+      setAddLogin('')
+      setAddPassword('')
+    } catch (err) {
+      setAddError((err as Error).message)
     } finally {
-      setUnlinking(false)
+      setAddBusy(false)
     }
   }
 
@@ -119,65 +133,12 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
     setSaving(true)
     setSaveError(null)
     try {
-      await updateCustomer(customer.id, { name, contact, location, type, status: active ? 'active' : 'inactive', priceTier })
+      await updateCustomer(root.id, { name, contact, location, type })
       setSaved(true)
     } catch {
       setSaveError(t('common.saveFailed'))
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function handleApprove() {
-    setApproving(true)
-    try {
-      await updateCustomer(customer.id, { approvalStatus: 'approved', priceTier })
-    } catch {
-      setSaveError(t('common.saveFailed'))
-    } finally {
-      setApproving(false)
-    }
-  }
-
-  // Applied immediately (not deferred to the big Save button) — granting or
-  // revoking a payment method reads as a permission, not a form field.
-  async function handleBankTransferToggle(next: boolean) {
-    setBankTransferBusy(true)
-    setBankTransferEnabled(next)
-    try {
-      await updateCustomer(customer.id, { bankTransferEnabled: next })
-    } catch {
-      setBankTransferEnabled(!next)
-      setSaveError(t('common.saveFailed'))
-    } finally {
-      setBankTransferBusy(false)
-    }
-  }
-
-  async function handleCashToggle(next: boolean) {
-    setCashBusy(true)
-    setCashEnabled(next)
-    try {
-      await updateCustomer(customer.id, { cashEnabled: next })
-    } catch {
-      setCashEnabled(!next)
-      setSaveError(t('common.saveFailed'))
-    } finally {
-      setCashBusy(false)
-    }
-  }
-
-  // The only way this ever gets cleared — a customer can never unlock
-  // themselves, even with the right password (see 0044_login_attempt_lockout.sql).
-  async function handleUnlock() {
-    setUnlocking(true)
-    try {
-      await updateCustomer(customer.id, { loginLockedAt: null })
-      setLoginLockedAt(null)
-    } catch {
-      setSaveError(t('common.saveFailed'))
-    } finally {
-      setUnlocking(false)
     }
   }
 
@@ -189,10 +150,10 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
             <ArrowLeft />
           </Link>
           <div>
-            <h1>{customer.name}</h1>
+            <h1>{root.name}</h1>
             <p className="order-meta" style={{ fontSize: 14, color: 'var(--gesso-fg-muted)', marginTop: 8 }}>
-              {customer.id} · {customerType(customer.type)} · {customer.orders} {t('nav.orders').toLowerCase()} ·{' '}
-              {customer.spent} {t('customerDetail.lifetimeSpend')}
+              {root.id} · {customerType(root.type)} · {groupOrders.length} {t('nav.orders').toLowerCase()} ·{' '}
+              {totalSpentRaw.toLocaleString('ru-RU')} сум {t('customerDetail.lifetimeSpend')}
             </p>
           </div>
         </div>
@@ -233,30 +194,85 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
         </div>
       )}
 
-      {parent && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            background: 'var(--gesso-surface-recessed, rgba(0,0,0,0.04))',
-            borderRadius: 'var(--gesso-radius-md)',
-            padding: '12px 16px',
-            fontSize: 14,
-          }}
-        >
-          <span>
-            Сотрудник клиента{' '}
-            <Link to={`/customers/${parent.id}`} style={{ fontWeight: 700, color: 'var(--gesso-accent)' }}>
-              {parent.name}
-            </Link>
-            {customer.staffRole ? ` · ${customer.staffRole}` : ''}
-          </span>
-          <Button variant="ghost" onClick={handleUnlink} disabled={unlinking}>
-            {unlinking ? 'Отвязываем…' : 'Отвязать'}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Dropdown
+          allLabel={selected.staffRole || 'Руководитель'}
+          hideAllOption
+          variant="pill"
+          options={group.map((m) => ({
+            value: m.id,
+            label: `${m.staffRole || 'Руководитель'} · ${m.contact || m.name}`,
+          }))}
+          value={selectedId}
+          onChange={(v) => v && setSelectedId(v)}
+        />
+        {emptyRoles.length > 0 && (
+          <Button
+            variant="ghost"
+            icon={<Plus />}
+            onClick={() => {
+              setAddRole(emptyRoles[0])
+              setAddError(null)
+              setAddOpen(true)
+            }}
+          >
+            Добавить сотрудника
           </Button>
-        </div>
+        )}
+      </div>
+
+      {addOpen && (
+        <Modal
+          title="Добавить сотрудника"
+          onClose={() => setAddOpen(false)}
+          footer={
+            <Button variant="primary" icon={<Check />} onClick={handleAddStaff} disabled={addBusy}>
+              {addBusy ? 'Создаём…' : 'Создать аккаунт'}
+            </Button>
+          }
+        >
+          {addError && <div style={{ color: 'var(--gesso-danger, #c02828)', fontSize: 14, marginBottom: 12 }}>{addError}</div>}
+          <div className="field">
+            <label htmlFor="as-role">Должность</label>
+            <div className="select-wrap">
+              <select id="as-role" value={addRole} onChange={(e) => setAddRole(e.target.value)}>
+                {emptyRoles.map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="as-first">Имя</label>
+              <input id="as-first" type="text" value={addFirstName} onChange={(e) => setAddFirstName(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="as-last">Фамилия</label>
+              <input id="as-last" type="text" value={addLastName} onChange={(e) => setAddLastName(e.target.value)} />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="as-email">Email</label>
+            <input id="as-email" type="email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="as-login">Логин</label>
+            <input id="as-login" type="text" value={addLogin} onChange={(e) => setAddLogin(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="as-password">Пароль</label>
+            <input
+              id="as-password"
+              type="password"
+              placeholder="минимум 8 символов"
+              value={addPassword}
+              onChange={(e) => setAddPassword(e.target.value)}
+            />
+          </div>
+        </Modal>
       )}
 
       <section className="detail-grid">
@@ -288,251 +304,292 @@ function CustomerDetailForm({ customer }: { customer: CustomerRow }) {
 
           <Card>
             <p className="section-label">{t('customerDetail.orderHistory')}</p>
-            {customerOrders.length === 0 ? (
+            {groupOrders.length === 0 ? (
               <div className="empty-state" style={{ padding: '24px 0' }}>
                 {t('customerDetail.noOrders')}
               </div>
             ) : (
               <div className="related-list">
-                {customerOrders.map((order) => (
-                  <Link className="related-row" to={`/orders/${order.id}`} key={order.id}>
-                    <div className="related-left">
-                      <div className="related-icon">
-                        <MapPin />
-                      </div>
-                      <div className="related-text">
-                        <div className="related-title">
-                          {t('common.order')} #{order.orderNumber}
+                {groupOrders.map((order) => {
+                  const placedBy = group.find((m) => m.id === order.customerId)
+                  return (
+                    <Link className="related-row" to={`/orders/${order.id}`} key={order.id}>
+                      <div className="related-left">
+                        <div className="related-icon">
+                          <MapPin />
                         </div>
-                        <div className="related-meta">{order.date}</div>
+                        <div className="related-text">
+                          <div className="related-title">
+                            {t('common.order')} #{order.orderNumber}
+                          </div>
+                          <div className="related-meta">
+                            {order.date}
+                            {placedBy && placedBy.id !== root.id ? ` · ${placedBy.staffRole || placedBy.contact || placedBy.name}` : ''}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="related-right">
-                      <StatusBadge status={order.status} />
-                      <span className="related-amount">{order.total}</span>
-                    </div>
-                  </Link>
-                ))}
+                      <div className="related-right">
+                        <StatusBadge status={order.status} />
+                        <span className="related-amount">{order.total}</span>
+                      </div>
+                    </Link>
+                  )
+                })}
               </div>
             )}
-          </Card>
-
-          {staff.length > 0 && (
-            <Card>
-              <p className="section-label">Сотрудники</p>
-              <div className="related-list">
-                {staff.map((member) => (
-                  <Link className="related-row" to={`/customers/${member.id}`} key={member.id}>
-                    <div className="related-left">
-                      <div className="related-icon">
-                        <Phone />
-                      </div>
-                      <div className="related-text">
-                        <div className="related-title">
-                          {member.contact || member.name}
-                          {member.staffRole ? ` · ${member.staffRole}` : ''}
-                        </div>
-                        <div className="related-meta">{member.phone || '—'}</div>
-                      </div>
-                    </div>
-                    <div className="related-right">
-                      {member.approvalStatus === 'pending' && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: '#a35b00',
-                            background: 'rgba(200,130,0,0.12)',
-                            borderRadius: 'var(--gesso-radius-full)',
-                            padding: '2px 8px',
-                          }}
-                        >
-                          Ожидает
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </Card>
-          )}
-        </div>
-
-        <div className="detail-col">
-          {customer.hasLogin && (
-            <Card>
-              <p className="section-label">Доступ в приложение</p>
-              <div className="status-row" style={{ paddingTop: 0, marginTop: 0, borderTop: 'none' }}>
-                <div>
-                  <div className="lbl">
-                    {customer.approvalStatus === 'approved'
-                      ? 'Одобрен'
-                      : customer.approvalStatus === 'pending'
-                        ? 'Ожидает подтверждения'
-                        : 'Заблокирован'}
-                  </div>
-                  <div className="sub">
-                    {customer.approvalStatus === 'approved'
-                      ? 'Может оформлять заказы в приложении.'
-                      : 'Зарегистрировался, но пока не может заказывать.'}
-                  </div>
-                </div>
-                {customer.approvalStatus !== 'approved' && (
-                  <Button variant="primary" onClick={handleApprove} disabled={approving}>
-                    {approving ? 'Одобряем…' : 'Одобрить'}
-                  </Button>
-                )}
-              </div>
-
-              {/* Same staff-at-one-business situation the registration
-                  screen's Должность picker is for — this login just belongs
-                  to an already-registered client instead of standing on its
-                  own. Only offered while this customer has no staff of its
-                  own (single-level linking) and isn't already linked. */}
-              {!customer.parentCustomerId && staff.length === 0 && linkable.length > 0 && (
-                <div style={{ marginTop: 16 }}>
-                  <div className="lbl">Сотрудник другой компании?</div>
-                  <div className="sub" style={{ marginBottom: 8 }}>
-                    Привяжите вместо создания отдельного клиента — заявка одобрится автоматически.
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <div className="select-wrap" style={{ flex: 1 }}>
-                      <select value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)}>
-                        <option value="">Выберите клиента…</option>
-                        {linkable.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <Button variant="ghost" onClick={handleLink} disabled={!linkTargetId || linking}>
-                      {linking ? 'Привязываем…' : 'Привязать'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {loginLockedAt && (
-                <div className="status-row" style={{ marginTop: 16 }}>
-                  <div>
-                    <div className="lbl">Аккаунт заблокирован</div>
-                    <div className="sub">
-                      3 неверные попытки входа подряд — клиент не может войти в приложение, пока вы не разблокируете.
-                    </div>
-                  </div>
-                  <Button variant="primary" onClick={handleUnlock} disabled={unlocking}>
-                    {unlocking ? 'Разблокируем…' : 'Разблокировать'}
-                  </Button>
-                </div>
-              )}
-
-              <div className="field" style={{ marginTop: 16 }}>
-                <label htmlFor="cd-price-tier">Тип цены для клиента</label>
-                <div className="select-wrap">
-                  <select
-                    id="cd-price-tier"
-                    value={priceTier}
-                    onChange={(e) => setPriceTier(e.target.value as CustomerRow['priceTier'])}
-                  >
-                    {(Object.keys(PRICE_TIER_LABEL) as CustomerRow['priceTier'][]).map((tier) => (
-                      <option key={tier} value={tier}>
-                        {PRICE_TIER_LABEL[tier]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="status-row" style={{ marginTop: 16 }}>
-                <div>
-                  <div className="lbl">Оплата «Перечисление»</div>
-                  <div className="sub">
-                    {customer.bankTransferRequested && !bankTransferEnabled
-                      ? 'Клиент запросил доступ в приложении.'
-                      : bankTransferEnabled
-                        ? 'Может выбрать этот способ оплаты при заказе.'
-                        : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
-                  </div>
-                </div>
-                <Switch
-                  checked={bankTransferEnabled}
-                  onChange={handleBankTransferToggle}
-                  label="Оплата «Перечисление»"
-                  disabled={bankTransferBusy}
-                />
-              </div>
-
-              <div className="status-row" style={{ marginTop: 16 }}>
-                <div>
-                  <div className="lbl">Оплата наличными курьеру</div>
-                  <div className="sub">
-                    {customer.cashRequested && !cashEnabled
-                      ? 'Клиент запросил доступ в приложении.'
-                      : cashEnabled
-                        ? 'Может выбрать этот способ оплаты при заказе.'
-                        : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
-                  </div>
-                </div>
-                <Switch
-                  checked={cashEnabled}
-                  onChange={handleCashToggle}
-                  label="Оплата наличными курьеру"
-                  disabled={cashBusy}
-                />
-              </div>
-            </Card>
-          )}
-
-          <Card>
-            <div className="status-row" style={{ paddingTop: 0, marginTop: 0, borderTop: 'none' }}>
-              <div>
-                <div className="lbl">{t('customerDetail.activeAccount')}</div>
-                <div className="sub">{t('customerDetail.canPlaceOrders')}</div>
-              </div>
-              <Switch checked={active} onChange={setActive} label={t('customerDetail.activeAccount')} />
-            </div>
-          </Card>
-
-          <Card>
-            <p className="section-label">{t('common.contact')}</p>
-            <div className="info-list">
-              <div className="info-row">
-                <span className="k">
-                  <Phone style={{ width: 14, height: 14, display: 'inline', marginRight: 6 }} />
-                  {t('common.phone')}
-                </span>
-                <span className="v">{customer.phone || '—'}</span>
-              </div>
-              <div className="info-row">
-                <span className="k">
-                  <Mail style={{ width: 14, height: 14, display: 'inline', marginRight: 6 }} />
-                  {t('common.email')}
-                </span>
-                <span className="v">{customer.email || '—'}</span>
-              </div>
-              {customer.staffRole && (
-                <div className="info-row">
-                  <span className="k">Должность</span>
-                  <span className="v">{customer.staffRole}</span>
-                </div>
-              )}
-            </div>
           </Card>
 
           <Card>
             <p className="section-label">{t('customerDetail.lifetimeValue')}</p>
             <div className="kpi-value" style={{ fontSize: 34 }}>
-              {customer.spent}
+              {totalSpentRaw.toLocaleString('ru-RU')} сум
             </div>
             <div className="kpi-delta up" style={{ marginTop: 8 }}>
               <span className="ref">
-                {customer.orders} {t('customerDetail.ordersTotal')}
+                {groupOrders.length} {t('customerDetail.ordersTotal')}
               </span>
             </div>
           </Card>
         </div>
+
+        <PersonPanel key={selected.id} person={selected} />
       </section>
     </>
+  )
+}
+
+// Everything specific to whichever person is picked in the selector above —
+// keyed by their id in the parent, so every piece of local state here
+// (price tier draft, toggle states) starts fresh per person instead of
+// carrying over from whoever was selected before.
+function PersonPanel({ person }: { person: CustomerRow }) {
+  const { updateCustomer } = useData()
+  const { t } = useLanguage()
+
+  const [active, setActive] = useState(person.status === 'active')
+  const [activeBusy, setActiveBusy] = useState(false)
+  const [priceTier, setPriceTier] = useState(person.priceTier)
+  const [priceTierBusy, setPriceTierBusy] = useState(false)
+  const [approving, setApproving] = useState(false)
+  const [bankTransferEnabled, setBankTransferEnabled] = useState(person.bankTransferEnabled)
+  const [bankTransferBusy, setBankTransferBusy] = useState(false)
+  const [cashEnabled, setCashEnabled] = useState(person.cashEnabled)
+  const [cashBusy, setCashBusy] = useState(false)
+  const [loginLockedAt, setLoginLockedAt] = useState(person.loginLockedAt)
+  const [unlocking, setUnlocking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleActiveToggle(next: boolean) {
+    setActiveBusy(true)
+    setActive(next)
+    try {
+      await updateCustomer(person.id, { status: next ? 'active' : 'inactive' })
+    } catch {
+      setActive(!next)
+      setError(t('common.saveFailed'))
+    } finally {
+      setActiveBusy(false)
+    }
+  }
+
+  async function handlePriceTierChange(next: CustomerRow['priceTier']) {
+    const prev = priceTier
+    setPriceTierBusy(true)
+    setPriceTier(next)
+    try {
+      await updateCustomer(person.id, { priceTier: next })
+    } catch {
+      setPriceTier(prev)
+      setError(t('common.saveFailed'))
+    } finally {
+      setPriceTierBusy(false)
+    }
+  }
+
+  async function handleApprove() {
+    setApproving(true)
+    try {
+      await updateCustomer(person.id, { approvalStatus: 'approved', priceTier })
+    } catch {
+      setError(t('common.saveFailed'))
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  async function handleBankTransferToggle(next: boolean) {
+    setBankTransferBusy(true)
+    setBankTransferEnabled(next)
+    try {
+      await updateCustomer(person.id, { bankTransferEnabled: next })
+    } catch {
+      setBankTransferEnabled(!next)
+      setError(t('common.saveFailed'))
+    } finally {
+      setBankTransferBusy(false)
+    }
+  }
+
+  async function handleCashToggle(next: boolean) {
+    setCashBusy(true)
+    setCashEnabled(next)
+    try {
+      await updateCustomer(person.id, { cashEnabled: next })
+    } catch {
+      setCashEnabled(!next)
+      setError(t('common.saveFailed'))
+    } finally {
+      setCashBusy(false)
+    }
+  }
+
+  async function handleUnlock() {
+    setUnlocking(true)
+    try {
+      await updateCustomer(person.id, { loginLockedAt: null })
+      setLoginLockedAt(null)
+    } catch {
+      setError(t('common.saveFailed'))
+    } finally {
+      setUnlocking(false)
+    }
+  }
+
+  return (
+    <div className="detail-col">
+      {error && (
+        <div
+          style={{
+            background: 'rgba(192,40,40,0.08)',
+            color: 'var(--gesso-danger, #c02828)',
+            borderRadius: 'var(--gesso-radius-md)',
+            padding: '12px 16px',
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {person.hasLogin && (
+        <Card>
+          <p className="section-label">Доступ в приложение</p>
+          <div className="status-row" style={{ paddingTop: 0, marginTop: 0, borderTop: 'none' }}>
+            <div>
+              <div className="lbl">
+                {person.approvalStatus === 'approved'
+                  ? 'Одобрен'
+                  : person.approvalStatus === 'pending'
+                    ? 'Ожидает подтверждения'
+                    : 'Заблокирован'}
+              </div>
+              <div className="sub">
+                {person.approvalStatus === 'approved'
+                  ? 'Может оформлять заказы в приложении.'
+                  : 'Зарегистрировался, но пока не может заказывать.'}
+              </div>
+            </div>
+            {person.approvalStatus !== 'approved' && (
+              <Button variant="primary" onClick={handleApprove} disabled={approving}>
+                {approving ? 'Одобряем…' : 'Одобрить'}
+              </Button>
+            )}
+          </div>
+
+          {loginLockedAt && (
+            <div className="status-row" style={{ marginTop: 16 }}>
+              <div>
+                <div className="lbl">Аккаунт заблокирован</div>
+                <div className="sub">3 неверные попытки входа подряд — клиент не может войти в приложение, пока вы не разблокируете.</div>
+              </div>
+              <Button variant="primary" onClick={handleUnlock} disabled={unlocking}>
+                {unlocking ? 'Разблокируем…' : 'Разблокировать'}
+              </Button>
+            </div>
+          )}
+
+          <div className="field" style={{ marginTop: 16 }}>
+            <label htmlFor="cd-price-tier">Тип цены для клиента</label>
+            <div className="select-wrap">
+              <select
+                id="cd-price-tier"
+                value={priceTier}
+                onChange={(e) => handlePriceTierChange(e.target.value as CustomerRow['priceTier'])}
+                disabled={priceTierBusy}
+              >
+                {(Object.keys(PRICE_TIER_LABEL) as CustomerRow['priceTier'][]).map((tier) => (
+                  <option key={tier} value={tier}>
+                    {PRICE_TIER_LABEL[tier]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="status-row" style={{ marginTop: 16 }}>
+            <div>
+              <div className="lbl">Оплата «Перечисление»</div>
+              <div className="sub">
+                {person.bankTransferRequested && !bankTransferEnabled
+                  ? 'Клиент запросил доступ в приложении.'
+                  : bankTransferEnabled
+                    ? 'Может выбрать этот способ оплаты при заказе.'
+                    : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
+              </div>
+            </div>
+            <Switch checked={bankTransferEnabled} onChange={handleBankTransferToggle} label="Оплата «Перечисление»" disabled={bankTransferBusy} />
+          </div>
+
+          <div className="status-row" style={{ marginTop: 16 }}>
+            <div>
+              <div className="lbl">Оплата наличными курьеру</div>
+              <div className="sub">
+                {person.cashRequested && !cashEnabled
+                  ? 'Клиент запросил доступ в приложении.'
+                  : cashEnabled
+                    ? 'Может выбрать этот способ оплаты при заказе.'
+                    : 'Пока недоступно — клиент должен сначала запросить в приложении.'}
+              </div>
+            </div>
+            <Switch checked={cashEnabled} onChange={handleCashToggle} label="Оплата наличными курьеру" disabled={cashBusy} />
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <div className="status-row" style={{ paddingTop: 0, marginTop: 0, borderTop: 'none' }}>
+          <div>
+            <div className="lbl">{t('customerDetail.activeAccount')}</div>
+            <div className="sub">{t('customerDetail.canPlaceOrders')}</div>
+          </div>
+          <Switch checked={active} onChange={handleActiveToggle} label={t('customerDetail.activeAccount')} disabled={activeBusy} />
+        </div>
+      </Card>
+
+      <Card>
+        <p className="section-label">{t('common.contact')}</p>
+        <div className="info-list">
+          <div className="info-row">
+            <span className="k">
+              <Phone style={{ width: 14, height: 14, display: 'inline', marginRight: 6 }} />
+              {t('common.phone')}
+            </span>
+            <span className="v">{person.phone || '—'}</span>
+          </div>
+          <div className="info-row">
+            <span className="k">
+              <Mail style={{ width: 14, height: 14, display: 'inline', marginRight: 6 }} />
+              {t('common.email')}
+            </span>
+            <span className="v">{person.email || '—'}</span>
+          </div>
+          <div className="info-row">
+            <span className="k">Должность</span>
+            <span className="v">{person.staffRole || 'Руководитель'}</span>
+          </div>
+        </div>
+      </Card>
+    </div>
   )
 }

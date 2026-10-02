@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import {
   assignDriverToDelivery,
   createCourierAccount,
+  createCustomerAccount,
   deleteOrderRow,
   deleteProductRow,
   fetchAll,
@@ -33,6 +34,7 @@ import type {
   OrderRow,
   OrderStatus,
   PaymentStatus,
+  PriceTier,
   ProductRow,
   StockStatus,
 } from '../lib/types'
@@ -63,6 +65,19 @@ export interface NewCustomerInput {
   type: string
   contact: string
   location: string
+  phone: string
+  email: string
+  companyName?: string
+  /** One of the app registration screen's three choices, or blank. */
+  staffRole?: string
+  /** Set together with `password` to also create a real login (via the
+   * `create-account` edge function) instead of a login-less reference row. */
+  login?: string
+  password?: string
+  priceTier?: PriceTier
+  /** Creates this customer already linked as staff of another (see
+   * migration 0047) instead of as its own top-level client. */
+  parentCustomerId?: string
 }
 
 interface DataContextValue {
@@ -251,19 +266,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
               name: input.name,
               type: input.type,
               contact: input.contact,
-              phone: '',
-              email: '',
+              phone: input.phone,
+              email: input.email,
               location: input.location,
               orders: 0,
               spent: '$0.00',
               status: 'active' as CustomerStatus,
               initials: input.name.slice(0, 2).toUpperCase(),
               approvalStatus: 'approved',
-              priceTier: 'with_price',
-              hasLogin: false,
-              staffRole: '',
-              companyName: '',
-              parentCustomerId: null,
+              priceTier: input.priceTier ?? 'with_price',
+              hasLogin: Boolean(input.login && input.password),
+              staffRole: input.staffRole ?? '',
+              companyName: input.companyName ?? '',
+              parentCustomerId: input.parentCustomerId ?? null,
               bankTransferEnabled: false,
               bankTransferRequested: false,
               cashEnabled: false,
@@ -275,7 +290,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ])
           return
         }
-        await insertCustomer(input)
+        if (input.login && input.password) {
+          await createCustomerAccount({
+            name: input.name,
+            companyName: input.companyName,
+            type: input.type,
+            phone: input.phone,
+            email: input.email,
+            location: input.location,
+            login: input.login,
+            password: input.password,
+            staffRole: input.staffRole,
+            priceTier: input.priceTier,
+            parentCustomerId: input.parentCustomerId,
+          })
+        } else {
+          await insertCustomer(input)
+        }
         await refresh()
       },
       updateCustomer: async (id, patch) => {
