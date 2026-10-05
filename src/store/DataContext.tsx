@@ -4,6 +4,7 @@ import {
   assignDriverToDelivery,
   createCourierAccount,
   createCustomerAccount,
+  deleteCustomerAccount,
   deleteOrderRow,
   deleteProductRow,
   fetchAll,
@@ -107,6 +108,8 @@ interface DataContextValue {
    * flow — can follow up with its own updateCustomer call. */
   addCustomer: (input: NewCustomerInput) => Promise<string | undefined>
   updateCustomer: (id: string, patch: Partial<CustomerRow>) => Promise<void>
+  /** Deletes the client (anonymized instead if they have orders). */
+  removeCustomer: (id: string) => Promise<'deleted' | 'anonymized'>
 
   deliveries: DeliveryRow[]
   drivers: string[]
@@ -326,6 +329,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         await updateCustomerRow(id, patch)
         await refresh()
+      },
+      removeCustomer: async (id) => {
+        if (!connected) {
+          setCustomers((prev) => prev.filter((c) => c.id !== id))
+          return 'deleted'
+        }
+        const mode = await deleteCustomerAccount(id)
+        await refresh()
+        return mode
       },
 
       deliveries,

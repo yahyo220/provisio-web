@@ -1,6 +1,6 @@
-import { ArrowLeft, Check, Eye, EyeOff, Mail, MapPin, Phone, Plus } from 'lucide-react'
+import { ArrowLeft, Check, Eye, EyeOff, Mail, MapPin, Phone, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
@@ -410,9 +410,13 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
 // (price tier draft, toggle states) starts fresh per person instead of
 // carrying over from whoever was selected before.
 function PersonPanel({ person }: { person: CustomerRow }) {
-  const { updateCustomer } = useData()
+  const { updateCustomer, removeCustomer } = useData()
   const { t } = useLanguage()
+  const navigate = useNavigate()
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [contact, setContact] = useState(person.contact)
   const [contactBusy, setContactBusy] = useState(false)
   const [active, setActive] = useState(person.status === 'active')
@@ -476,6 +480,21 @@ function PersonPanel({ person }: { person: CustomerRow }) {
       setCredsMsg({ ok: false, text: loginSaved ? `Логин сохранён, но пароль изменить не удалось: ${reason}` : reason })
     } finally {
       setCredsBusy(false)
+    }
+  }
+
+  async function handleConfirmDelete() {
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await removeCustomer(person.id)
+      // Staff stay on the company's page; a whole company is gone, so leave.
+      if (!person.parentCustomerId) navigate('/customers')
+      else setConfirmingDelete(false)
+    } catch (err) {
+      setDeleteError((err as Error).message || t('common.saveFailed'))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -812,6 +831,45 @@ function PersonPanel({ person }: { person: CustomerRow }) {
           </div>
         )}
       </Card>
+
+      <Card>
+        <p className="section-label">Удаление</p>
+        <div className="status-row" style={{ paddingTop: 0, marginTop: 0, borderTop: 'none' }}>
+          <div>
+            <div className="lbl">Удалить клиента</div>
+            <div className="sub">
+              Без заказов — удаляется полностью. Если заказы есть, личные данные стираются, а заказы остаются в учёте.
+            </div>
+          </div>
+          <Button variant="danger-text" icon={<Trash2 />} onClick={() => setConfirmingDelete(true)}>
+            Удалить
+          </Button>
+        </div>
+      </Card>
+
+      {confirmingDelete && (
+        <Modal
+          title={`Удалить «${person.name}»?`}
+          onClose={() => !deleting && setConfirmingDelete(false)}
+          footer={
+            <>
+              <Button variant="text" onClick={() => setConfirmingDelete(false)} disabled={deleting}>
+                {t('common.cancel')}
+              </Button>
+              <Button variant="danger-text" onClick={handleConfirmDelete} disabled={deleting}>
+                {deleting ? 'Удаляем…' : 'Удалить'}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: 14, color: 'var(--gesso-fg-muted)' }}>
+            Клиент потеряет доступ в приложение. Восстановить будет нельзя.
+          </p>
+          {deleteError && (
+            <p style={{ fontSize: 14, fontWeight: 600, marginTop: 12, color: 'var(--gesso-danger, #c02828)' }}>{deleteError}</p>
+          )}
+        </Modal>
+      )}
     </div>
   )
 }

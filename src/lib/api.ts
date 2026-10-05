@@ -388,6 +388,25 @@ export async function setCustomerPassword(customerId: string, password: string) 
   if (data?.error) throw new Error(data.error)
 }
 
+/** Removes a client via the `admin-delete-customer` edge function. Deleted
+ * outright when they have no orders; otherwise anonymized (orders stay for
+ * accounting). Only succeeds if the caller is signed in as an admin. */
+export async function deleteCustomerAccount(customerId: string): Promise<'deleted' | 'anonymized'> {
+  const db = assertClient()
+  const { data: sessionData } = await db.auth.getSession()
+  if (!sessionData.session) throw new Error('Not signed in.')
+
+  const { data, error } = await db.functions.invoke('admin-delete-customer', { body: { customerId } })
+  if (error) {
+    // A non-2xx reply hides the function's own message inside the response.
+    const ctx = (error as { context?: Response }).context
+    const detail = ctx ? await ctx.json().catch(() => null) : null
+    throw new Error(detail?.error ?? error.message)
+  }
+  if (data?.error) throw new Error(data.error)
+  return data?.mode === 'anonymized' ? 'anonymized' : 'deleted'
+}
+
 /** Calls the `create-account` edge function (service-role) to give a courier
  * a real login. Only succeeds if the caller is signed in as an admin. */
 export async function createCourierAccount(input: { name: string; phone: string; login: string; password: string }) {
