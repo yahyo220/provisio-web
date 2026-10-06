@@ -32,7 +32,9 @@ export const VAT_RATE = 0.12
 // margin from (only a customer-facing "external" price tier, unrelated to
 // what anything cost to acquire) — confirmed with the user directly. Until
 // that exists, every product's margin/profit is a flat 12% of its pre-VAT
-// price. Shares its numeric value with VAT_RATE by coincidence only; keep
+// price — taken out of the price the customer already pays, never added on
+// top of it, so it works for every product (including ones whose price was
+// just imported) with no extra data. Shares its numeric value with VAT_RATE by coincidence only; keep
 // them as separate constants so a future change to either doesn't
 // accidentally move the other.
 export const MARGIN_RATE = 0.12
@@ -413,10 +415,10 @@ export async function downloadOrderExcelWithMargin(
     const sumWithoutVat = Math.round(line.qty * line.unitPrice)
     const vatAmount = Math.round(sumWithoutVat * VAT_RATE)
     const marginAmount = Math.round(sumWithoutVat * MARGIN_RATE)
-    // total_sum = sum_without_vat + vat_sum + margin_amount, straight from
-    // the template's own token — unlike the plain price накладная, "Сумма"
-    // here is marked up by margin too, not just base + VAT.
-    const lineTotal = sumWithoutVat + vatAmount + marginAmount
+    // The margin is already inside the product's price (taken out of it, not
+    // added on top), so "Сумма" is the same base + VAT the customer is
+    // charged — Маржа/Прибыль just show how much of that price is margin.
+    const lineTotal = sumWithoutVat + vatAmount
     grandTotal += lineTotal
     grandProfit += marginAmount
 
@@ -507,10 +509,9 @@ export async function downloadWeeklyInvoiceWithMarginExcel(params: {
     const subtotal = items.reduce((s, oi) => s + oi.qty * oi.unitPrice, 0)
     const vat = Math.round(subtotal * VAT_RATE)
     const marginAmount = Math.round(subtotal * MARGIN_RATE)
-    // total_sum = sum_without_vat + vat_sum + margin_amount, straight from
-    // the template's own token — unlike the plain weekly накладная,
-    // "Обшая сумма заказа" here is marked up by margin too.
-    const orderTotal = subtotal + vat + marginAmount
+    // Margin is taken out of the price, not added to it — "Обшая сумма
+    // заказа" is the same subtotal + VAT the customer pays.
+    const orderTotal = subtotal + vat
     grandTotal += orderTotal
     grandProfit += marginAmount
 
