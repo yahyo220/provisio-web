@@ -18,6 +18,7 @@ import Orders from './pages/Orders'
 import ProductDetail from './pages/ProductDetail'
 import Products from './pages/Products'
 import Support from './pages/Support'
+import Warehouse from './pages/Warehouse'
 import { isSupabaseConfigured } from './lib/supabase'
 import { DataProvider } from './store/DataContext'
 import { useAuth } from './store/AuthContext'
@@ -66,6 +67,7 @@ function DashboardRoutes() {
         <Route path="/products" element={<Products />} />
         <Route path="/products/new" element={<AddProduct />} />
         <Route path="/products/:id" element={<ProductDetail />} />
+        <Route path="/warehouse" element={<Warehouse />} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/customers/new" element={<AddCustomer />} />
         <Route path="/customers/:id" element={<CustomerDetail />} />

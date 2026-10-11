@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { key: 'nav.dashboard', to: '/' },
   { key: 'nav.orders', to: '/orders' },
   { key: 'nav.products', to: '/products' },
+  { key: 'nav.warehouse', to: '/warehouse' },
   { key: 'nav.customers', to: '/customers' },
   { key: 'nav.deliveries', to: '/deliveries' },
   { key: 'nav.couriers', to: '/couriers' },
