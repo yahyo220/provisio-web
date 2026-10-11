@@ -159,7 +159,13 @@ async function storeNotification(
 
 Deno.serve(async (req) => {
   try {
-    if (WEBHOOK_SECRET && req.headers.get('x-webhook-secret') !== WEBHOOK_SECRET) {
+    // Fail closed: with no secret configured, anyone who found this URL could
+    // write notifications and send pushes to any account.
+    if (!WEBHOOK_SECRET) {
+      console.error('WEBHOOK_SECRET is not set — refusing every request')
+      return json({ error: 'Not configured' }, 500)
+    }
+    if (req.headers.get('x-webhook-secret') !== WEBHOOK_SECRET) {
       return json({ error: 'Unauthorized' }, 401)
     }
 

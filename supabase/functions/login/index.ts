@@ -4,8 +4,10 @@
 // directly from the client — nothing ever counted failures, so
 // resolve_login_email (0018) could be probed indefinitely to find out which
 // logins exist. This function wraps the same two steps but reports the
-// result to record_login_result() (0044) so 3 wrong passwords locks the
-// account until an admin unlocks it on the website.
+// result to record_login_result() so 5 wrong passwords lock the login for
+// 15 minutes (0060; it used to be 3 tries and locked until an admin stepped
+// in, which let anyone lock anyone out). An admin can still unlock early on
+// the website.
 //
 // check_login_lock/record_login_result/resolve_login_email are all
 // service_role-only as of migrations 0048/0050 (they used to be callable by
@@ -48,7 +50,7 @@ Deno.serve(async (req) => {
 
     const { data: locked } = await admin.rpc('check_login_lock', { p_login: login })
     if (locked) {
-      return json({ error: 'Аккаунт заблокирован после нескольких неверных попыток входа. Обратитесь в поддержку.' }, 423)
+      return json({ error: 'Слишком много неверных попыток входа. Попробуйте снова через 15 минут.' }, 423)
     }
 
     const { data: email, error: resolveErr } = await admin.rpc('resolve_login_email', { p_login: login })
