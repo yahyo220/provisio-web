@@ -1450,7 +1450,8 @@ td.amount {
 
 .order-row {
   display: grid;
-  grid-template-columns: 1.4fr 1.6fr 1fr 1fr 0.9fr 1.1fr 40px;
+  /* Last column fits both the "Действия" header and the two row buttons. */
+  grid-template-columns: 1.4fr 1.6fr 1fr 1fr 0.9fr 1.1fr 100px;
   align-items: center;
   gap: 16px;
   padding: 20px 0;
@@ -1512,6 +1513,17 @@ td.amount {
   font-family: var(--gesso-font-display);
   font-weight: 700;
   font-size: var(--gesso-text-md);
+}
+
+/* Second line under a pre-VAT order total: the same order with 12% VAT. */
+.total-with-vat {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--gesso-font-body);
+  font-size: var(--gesso-text-xs);
+  font-weight: 500;
+  color: var(--gesso-fg-muted);
+  white-space: nowrap;
 }
 
 .status-badge {
@@ -2091,6 +2103,17 @@ td.amount {
 .price-val {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A long category name in the products list ends in "…" instead of
+   running into the price column; the full name is in the title tooltip. */
+.split-table .cat-tag {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .unit-muted {
@@ -2297,6 +2320,241 @@ td.amount {
   margin-top: 20px;
   padding-top: 20px;
   border-top: 1px solid var(--gesso-divider);
+}
+
+/* ---------------------------------- Warehouse (Склад) ---------------------------------- */
+
+.modal.modal-wide {
+  max-width: 920px;
+}
+
+.wh-demo-note {
+  background: rgba(184, 134, 58, 0.14);
+  border: 1px solid rgba(184, 134, 58, 0.35);
+  color: #6f4f1c;
+  border-radius: var(--gesso-radius-md);
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.wh-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(30, 92, 62, 0.1);
+  color: var(--gesso-accent);
+  border-radius: var(--gesso-radius-md);
+  padding: 8px 8px 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.wh-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--gesso-radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wh-badge[data-tone='in'] {
+  background: rgba(30, 92, 62, 0.14);
+  color: var(--gesso-accent);
+}
+.wh-badge[data-tone='low'] {
+  background: rgba(184, 134, 58, 0.18);
+  color: #85601f;
+}
+.wh-badge[data-tone='out'],
+.wh-badge[data-tone='negative'] {
+  background: rgba(163, 64, 47, 0.14);
+  color: var(--gesso-danger);
+}
+
+.wh-qty {
+  font-family: var(--gesso-font-display);
+  font-weight: 600;
+  font-size: 16px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.wh-qty .unit {
+  font-family: var(--gesso-font-body);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--gesso-fg-muted);
+  margin-left: 3px;
+}
+.wh-qty.neg {
+  color: var(--gesso-danger);
+}
+
+.wh-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--gesso-fg-muted);
+  margin-top: 2px;
+}
+
+.wh-exp-soon,
+.wh-tone-warn {
+  color: var(--gesso-warning);
+  font-weight: 600;
+}
+.wh-exp-late,
+.wh-tone-danger {
+  color: var(--gesso-danger);
+  font-weight: 600;
+}
+.wh-tone-good {
+  color: var(--gesso-accent);
+  font-weight: 600;
+}
+
+.wh-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.wh-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--gesso-fg-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wh-date {
+  border: none;
+  background: var(--gesso-surface-recessed);
+  border-radius: var(--gesso-radius-full);
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--gesso-fg);
+}
+.wh-date:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--gesso-accent);
+}
+
+.wh-summary-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.wh-summary {
+  min-width: 280px;
+}
+
+.wh-total-line {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 16px;
+  padding-top: 16px;
+  margin-top: 4px;
+  border-top: 1px solid var(--gesso-divider);
+  font-size: 14px;
+  color: var(--gesso-fg-muted);
+}
+.wh-total-line strong {
+  font-family: var(--gesso-font-display);
+  font-size: 20px;
+  color: var(--gesso-fg);
+}
+
+.wh-form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+
+.wh-lines td {
+  vertical-align: top;
+}
+.wh-qty-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.wh-qty-input select {
+  border: none;
+  background: var(--gesso-surface-recessed);
+  border-radius: var(--gesso-radius-sm);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--gesso-fg);
+}
+
+.wh-footer-total {
+  margin-right: auto;
+  align-self: center;
+  font-size: 14px;
+  color: var(--gesso-fg-muted);
+}
+.wh-footer-total strong {
+  font-family: var(--gesso-font-display);
+  font-size: 18px;
+  color: var(--gesso-fg);
+}
+
+.wh-error {
+  color: var(--gesso-danger);
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+.wh-warning {
+  background: rgba(184, 134, 58, 0.14);
+  color: #6f4f1c;
+  border-radius: var(--gesso-radius-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.wh-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.wh-card-stock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wh-card-stock .wh-qty {
+  font-size: 24px;
+}
+
+.wh-price-box {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: var(--gesso-surface-recessed);
+  border-radius: var(--gesso-radius-md);
+  font-size: 14px;
+}
+.wh-price-box strong {
+  font-family: var(--gesso-font-display);
+  font-size: 18px;
 }
 
 /* ---------------------------------- Account popover ---------------------------------- */

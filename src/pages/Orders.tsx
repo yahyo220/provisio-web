@@ -160,7 +160,7 @@ export default function Orders() {
             <span>{t('common.order')}</span>
             <span>{t('common.customer')}</span>
             <span>{t('common.date')}</span>
-            <span>{t('common.total')}</span>
+            <span>{t('common.totalNet')}</span>
             <span>{t('common.payment')}</span>
             <span>{t('common.status')}</span>
             <span style={{ textAlign: 'right' }}>{t('common.actions')}</span>
@@ -176,7 +176,10 @@ export default function Orders() {
                 <span className="meta">{order.meta}</span>
               </div>
               <span className="order-date">{order.date}</span>
-              <span className="order-total">{order.total}</span>
+              <span className="order-total">
+                {order.total}
+                <span className="total-with-vat">{t('common.withVat')} {order.totalWithVat}</span>
+              </span>
               <span className="pay-cell">
                 <PaymentLabel status={order.payment} />
               </span>

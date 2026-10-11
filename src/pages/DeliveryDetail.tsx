@@ -201,7 +201,7 @@ function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
                       {t('common.order')} #{order.orderNumber}
                     </div>
                     <div className="related-meta">
-                      {order.date} · {order.total}
+                      {order.date} · {order.total} ({t('common.withVat')} {order.totalWithVat})
                     </div>
                   </div>
                 </div>

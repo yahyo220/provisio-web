@@ -23,10 +23,9 @@ import orderInvoiceWithPriceTemplateUrl from '../assets/templates/order-invoice-
 import weeklyInvoiceTemplateUrl from '../assets/templates/weekly-invoice-template.xlsx?url'
 import orderInvoiceMarginTemplateUrl from '../assets/templates/order-invoice-margin-template.xlsx?url'
 import weeklyInvoiceMarginTemplateUrl from '../assets/templates/weekly-invoice-margin-template.xlsx?url'
+// VAT_RATE matches the app's CartController.kVatRate and the database — see ./vat.
+import { VAT_RATE } from './vat'
 
-// Matches the app's own CartController.kVatRate (lib/state/cart_controller.dart) —
-// keep the two in sync if this ever changes.
-export const VAT_RATE = 0.12
 
 // The business has no purchase-cost data on products to compute a real
 // margin from (only a customer-facing "external" price tier, unrelated to

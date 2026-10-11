@@ -40,7 +40,7 @@ export default function ProductDetail() {
 function ProductDetailForm({ product }: { product: ProductRow }) {
   const navigate = useNavigate()
   const { updateProduct, removeProduct, products } = useData()
-  const { t, category, unit } = useLanguage()
+  const { t, category, unit, lang } = useLanguage()
 
   const [name, setName] = useState(product.name)
   const [nameUzCyrl, setNameUzCyrl] = useState(product.nameUzCyrl)
@@ -159,6 +159,7 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
         active,
         image,
         updated: 'Just now',
+        updatedAt: new Date().toISOString(),
       })
       setSaved(true)
     } catch {
@@ -236,7 +237,8 @@ function ProductDetailForm({ product }: { product: ProductRow }) {
           <div>
             <h1>{product.name}</h1>
             <p className="order-meta" style={{ fontSize: 14, color: 'var(--gesso-fg-muted)', marginTop: 8 }}>
-              {t('common.sku')} {product.sku} · {category(product.category)} · {t('common.updated')} {product.updated}
+              {t('common.sku')} {product.sku} · {category(product.category)} · {t('common.updated')}{' '}
+              {new Date(product.updatedAt).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
           </div>
         </div>

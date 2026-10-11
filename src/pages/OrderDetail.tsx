@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, Minus, Package, PackageX, Plus, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Download, Package, PackageX, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -7,15 +7,59 @@ import Dropdown from '../components/ui/Dropdown'
 import Modal from '../components/ui/Modal'
 import StatusPill from '../components/ui/StatusPill'
 import { useLanguage } from '../i18n/LanguageContext'
-import { fetchOrderFeedback, fetchOrderItems, updateOrderItemPrice, updateOrderItemQty, type OrderFeedbackRow } from '../lib/api'
-import type { OrderLineItem } from '../lib/data'
+import { fetchOrderFeedback, fetchOrderItems, saveOrderItems, type OrderFeedbackRow, type SaveOrderItemInput } from '../lib/api'
+import { placeholderImage, type OrderLineItem } from '../lib/data'
 import { downloadOrderExcel } from '../lib/exportOrderExcel'
-import { formatMoney } from '../lib/format'
+import { formatMoney, parseMoney } from '../lib/format'
+import { printOrder } from '../lib/printOrder'
 import { supabase } from '../lib/supabase'
 import type { OrderRow, OrderStatus, PaymentStatus } from '../lib/types'
+import { vatOf } from '../lib/vat'
 import { useData } from '../store/DataContext'
 
 const ORDER_STATUSES: OrderStatus[] = ['new', 'confirmed', 'preparing', 'ready', 'out', 'delivered', 'cancelled']
+
+/** One row of the "Редактировать заказ" draft. Quantities and prices stay
+ * as the typed text until Save, so "1," on the way to "1,2" isn't rejected
+ * or rewritten mid-typing. */
+interface DraftLine {
+  key: string
+  /** order_items.id — absent for a line added in this edit. */
+  id?: string
+  productId?: string
+  name: string
+  sku: string
+  unit: string
+  image: string
+  qtyText: string
+  priceText: string
+}
+
+/** "1,2" or "1.2" → 1.2. Null unless it's above zero with at most 3
+ * decimals (order_items.qty is numeric(10,3)). */
+function parseQty(text: string): number | null {
+  const s = text.trim().replace(',', '.')
+  if (!/^\d+(\.\d{1,3})?$/.test(s)) return null
+  const n = Number(s)
+  return n > 0 ? n : null
+}
+
+/** "12 000", "950,5" → number. Null unless zero or more with at most 2
+ * decimals (order_items.unit_price is numeric(10,2)). */
+function parsePrice(text: string): number | null {
+  const s = text.replace(/\s/g, '').replace(',', '.')
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null
+  return Number(s)
+}
+
+function formatQty(qty: number, lang: string): string {
+  return qty.toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-US', { maximumFractionDigits: 3 })
+}
+
+function qtyToText(qty: number, lang: string): string {
+  const s = String(qty)
+  return lang === 'ru' ? s.replace('.', ',') : s
+}
 
 export default function OrderDetail() {
   const { orderId } = useParams<{ orderId: string }>()
@@ -38,8 +82,8 @@ export default function OrderDetail() {
 }
 
 function OrderDetailForm({ order }: { order: OrderRow }) {
-  const { updateOrderStatus, updateOrderPayment, customers, orders } = useData()
-  const { t, unit } = useLanguage()
+  const { updateOrderStatus, updateOrderPayment, customers, orders, products } = useData()
+  const { t, unit, lang } = useLanguage()
   const customer = customers.find((c) => c.id === order.customerId)
   const relatedOrders = orders
     .filter((o) => o.customerId === order.customerId && o.id !== order.id)
@@ -54,11 +98,13 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
   const [exportingExcel, setExportingExcel] = useState(false)
   const [confirmingCancel, setConfirmingCancel] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
-  // While a price field is mid-edit, its displayed text is tracked here
-  // instead of coming straight from lineItems — otherwise clearing the
-  // field to type a new number snaps back to "0" on every keystroke
-  // (Number('') is 0), making it impossible to actually clear and retype.
-  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({})
+  // "Редактировать заказ": the item list is edited as a draft and saved in
+  // one go (admin_save_order_items, migration 0061). Nothing reaches the
+  // database — or the customer's app and invoices — before Save.
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<DraftLine[]>([])
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!supabase) {
@@ -94,48 +140,112 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
 
   const statusOptions = ORDER_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))
 
-  const subtotal = useMemo(
-    () => lineItems.reduce((sum, item) => sum + item.qty * item.unitPrice, 0),
-    [lineItems],
+  // What the table and totals show: the draft while editing (lines with a
+  // not-yet-valid number count as 0), the saved items otherwise.
+  const shownLines = useMemo(
+    () =>
+      editing
+        ? draft.map((l) => ({ qty: parseQty(l.qtyText) ?? 0, unitPrice: parsePrice(l.priceText) ?? 0 }))
+        : lineItems,
+    [editing, draft, lineItems],
   )
-  const total = subtotal + order.deliveryFee
+  const subtotal = shownLines.reduce((sum, item) => sum + item.qty * item.unitPrice, 0)
+  const totalNet = subtotal + order.deliveryFee
+  const vat = vatOf(totalNet)
 
-  function changeQty(item: OrderLineItem, delta: number) {
-    applyQty(item, Math.max(0, item.qty + delta))
+  const addableProducts = useMemo(
+    () => products.filter((p) => p.active).sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+    [products],
+  )
+
+  function startEditing() {
+    setDraft(
+      lineItems.map((l, i) => ({
+        key: l.id ?? `line-${i}`,
+        id: l.id,
+        name: l.name,
+        sku: l.sku,
+        unit: l.unit,
+        image: l.image,
+        qtyText: qtyToText(l.qty, lang),
+        priceText: String(l.unitPrice),
+      })),
+    )
+    setEditError(null)
+    setEditing(true)
   }
 
-  function setQty(item: OrderLineItem, qty: number) {
-    applyQty(item, Math.max(0, qty))
+  function cancelEditing() {
+    setEditing(false)
+    setDraft([])
+    setEditError(null)
   }
 
-  // Shared by changeQty/setQty — optimistic update with a rollback + a
-  // visible error if the write fails, instead of silently drifting from
-  // what's actually saved (found in a fresh audit pass: this and setPrice/
-  // changeStatus below used to just console.error and leave the UI showing
-  // an edit that was never persisted).
-  function applyQty(item: OrderLineItem, qty: number) {
-    const prevQty = item.qty
-    setLineItems((items) => items.map((i) => (i === item ? { ...i, qty } : i)))
-    if (!item.id) return
-    updateOrderItemQty(item.id, qty).catch(() => {
-      setLineItems((items) => items.map((i) => (i === item ? { ...i, qty: prevQty } : i)))
-      setStatusError(t('common.saveFailed'))
-    })
+  function updateDraft(key: string, patch: Partial<DraftLine>) {
+    setDraft((lines) => lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   }
 
-  function setPrice(item: OrderLineItem, unitPrice: number) {
-    const safePrice = Math.max(0, unitPrice)
-    const prevPrice = item.unitPrice
-    setLineItems((items) => items.map((i) => (i === item ? { ...i, unitPrice: safePrice } : i)))
-    if (!item.id) return
-    updateOrderItemPrice(item.id, safePrice).catch(() => {
-      setLineItems((items) => items.map((i) => (i === item ? { ...i, unitPrice: prevPrice } : i)))
-      setStatusError(t('common.saveFailed'))
-    })
+  function addProduct(productId: string) {
+    const p = products.find((x) => x.id === productId)
+    if (!p) return
+    // Same price the customer would get when ordering it in the app.
+    const price = customer?.priceTier === 'external' && p.priceExternal ? parseMoney(p.priceExternal) : parseMoney(p.price)
+    setDraft((lines) => [
+      ...lines,
+      {
+        key: `new-${p.id}-${Date.now()}`,
+        productId: p.id,
+        name: p.name,
+        sku: p.sku,
+        unit: p.unit,
+        image: p.image,
+        qtyText: '1',
+        priceText: String(price),
+      },
+    ])
   }
 
-  function lineKey(item: OrderLineItem) {
-    return item.id ?? item.sku
+  async function saveEditing() {
+    if (draft.length === 0) {
+      setEditError('В заказе должен остаться хотя бы один товар. Чтобы убрать всё — отмените заказ.')
+      return
+    }
+    const items: SaveOrderItemInput[] = []
+    for (const l of draft) {
+      const qty = parseQty(l.qtyText)
+      if (qty === null) {
+        setEditError(`Проверьте количество у «${l.name}»: нужно число больше нуля, например 1,2.`)
+        return
+      }
+      const price = parsePrice(l.priceText)
+      if (price === null) {
+        setEditError(`Проверьте цену у «${l.name}».`)
+        return
+      }
+      items.push({
+        id: l.id ?? null,
+        product_id: l.productId ?? null,
+        name: l.name,
+        sku: l.sku,
+        unit: l.unit,
+        image_url: l.image === placeholderImage ? '' : l.image,
+        qty,
+        unit_price: price,
+      })
+    }
+    setSavingEdit(true)
+    setEditError(null)
+    try {
+      await saveOrderItems(order.id, items)
+      setLineItems(await fetchOrderItems(order.id))
+      setEditing(false)
+      setDraft([])
+    } catch (err) {
+      console.error(err)
+      setEditError('Не удалось сохранить изменения — заказ остался прежним. Попробуйте ещё раз.')
+    } finally {
+      setSavingEdit(false)
+    }
   }
 
   function changeStatus(next: OrderStatus) {
@@ -185,7 +295,9 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
           </div>
         </div>
         <div className="header-actions">
-          <Button variant="text">{t('orderDetail.printOrder')}</Button>
+          <Button variant="text" onClick={() => printOrder(order, customer, lineItems, unit)} disabled={editing || lineItems.length === 0}>
+            {t('orderDetail.printOrder')}
+          </Button>
           <Button variant="ghost" icon={<Download />} onClick={handleExportExcel} disabled={exportingExcel || lineItems.length === 0}>
             {exportingExcel ? 'Готовим файл…' : 'Скачать Excel'}
           </Button>
@@ -225,6 +337,11 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
               </p>
               <StatusPill status={status} />
             </div>
+            {editing && (
+              <p style={{ fontSize: 13, color: 'var(--gesso-fg-muted)', margin: '0 0 12px' }}>
+                Количество можно вводить с запятой, например 1,2. Изменения увидят клиент и накладные только после «Сохранить».
+              </p>
+            )}
             <div style={{ overflowX: 'auto' }}>
               <table className="line-table">
                 <thead>
@@ -234,89 +351,142 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                     <th style={{ textAlign: 'right' }}>{t('common.unit')}</th>
                     <th style={{ textAlign: 'right' }}>{t('common.price')}</th>
                     <th style={{ textAlign: 'right' }}>{t('common.total')}</th>
+                    {editing && <th aria-label="Удалить" />}
                   </tr>
                 </thead>
                 <tbody>
-                  {lineItems.map((line) => (
-                    <tr key={line.id ?? line.sku}>
-                      <td>
-                        <div className="prod-cell">
-                          <img className="prod-thumb" src={line.image} alt="" />
-                          <div>
-                            <div className="prod-name">{line.name}</div>
-                            <div className="prod-sku">{line.sku}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="num">
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <button
-                            type="button"
-                            className="action-btn"
-                            aria-label={`Decrease quantity of ${line.name}`}
-                            onClick={() => changeQty(line, -1)}
-                          >
-                            <Minus style={{ width: 14, height: 14 }} />
-                          </button>
-                          <input
-                            className="qty-input"
-                            type="number"
-                            min={0}
-                            value={line.qty}
-                            onChange={(e) => setQty(line, Number(e.target.value))}
-                            aria-label={`Quantity of ${line.name}`}
-                          />
-                          <button
-                            type="button"
-                            className="action-btn"
-                            aria-label={`Increase quantity of ${line.name}`}
-                            onClick={() => changeQty(line, 1)}
-                          >
-                            <Plus style={{ width: 14, height: 14 }} />
-                          </button>
-                        </div>
-                      </td>
-                      <td className="num">{unit(line.unit)}</td>
-                      <td className="num">
-                        <input
-                          className="price-cell-input"
-                          type="text"
-                          inputMode="decimal"
-                          value={priceDrafts[lineKey(line)] ?? String(line.unitPrice)}
-                          onChange={(e) => {
-                            const raw = e.target.value
-                            if (raw !== '' && !/^\d*\.?\d*$/.test(raw)) return
-                            setPriceDrafts((d) => ({ ...d, [lineKey(line)]: raw }))
-                            const parsed = Number(raw)
-                            if (raw !== '' && !Number.isNaN(parsed)) setPrice(line, parsed)
-                          }}
-                          onBlur={() =>
-                            setPriceDrafts((d) => {
-                              const rest = { ...d }
-                              delete rest[lineKey(line)]
-                              return rest
-                            })
-                          }
-                          aria-label={`Price of ${line.name}`}
-                        />
-                      </td>
-                      <td className="num">{formatMoney(line.qty * line.unitPrice)}</td>
-                    </tr>
-                  ))}
+                  {editing
+                    ? draft.map((line) => {
+                        const qty = parseQty(line.qtyText)
+                        const price = parsePrice(line.priceText)
+                        const invalid = { boxShadow: '0 0 0 2px var(--gesso-danger, #c02828)' }
+                        return (
+                          <tr key={line.key}>
+                            <td>
+                              <div className="prod-cell">
+                                <img className="prod-thumb" src={line.image} alt="" />
+                                <div>
+                                  <div className="prod-name">{line.name}</div>
+                                  <div className="prod-sku">{line.sku}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="num">
+                              <input
+                                className="qty-input"
+                                type="text"
+                                inputMode="decimal"
+                                value={line.qtyText}
+                                onChange={(e) => updateDraft(line.key, { qtyText: e.target.value })}
+                                style={qty === null ? invalid : undefined}
+                                aria-label={`Количество: ${line.name}`}
+                              />
+                            </td>
+                            <td className="num">{unit(line.unit)}</td>
+                            <td className="num">
+                              <input
+                                className="price-cell-input"
+                                type="text"
+                                inputMode="decimal"
+                                value={line.priceText}
+                                onChange={(e) => updateDraft(line.key, { priceText: e.target.value })}
+                                style={price === null ? invalid : undefined}
+                                aria-label={`Цена: ${line.name}`}
+                              />
+                            </td>
+                            <td className="num">{formatMoney((qty ?? 0) * (price ?? 0))}</td>
+                            <td className="num">
+                              <button
+                                type="button"
+                                className="action-btn"
+                                aria-label={`Убрать ${line.name} из заказа`}
+                                onClick={() => setDraft((lines) => lines.filter((l) => l.key !== line.key))}
+                              >
+                                <Trash2 style={{ width: 14, height: 14 }} />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    : lineItems.map((line) => (
+                        <tr key={line.id ?? line.sku}>
+                          <td>
+                            <div className="prod-cell">
+                              <img className="prod-thumb" src={line.image} alt="" />
+                              <div>
+                                <div className="prod-name">{line.name}</div>
+                                <div className="prod-sku">{line.sku}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="num">{formatQty(line.qty, lang)}</td>
+                          <td className="num">{unit(line.unit)}</td>
+                          <td className="num">{formatMoney(line.unitPrice)}</td>
+                          <td className="num">{formatMoney(line.qty * line.unitPrice)}</td>
+                        </tr>
+                      ))}
                 </tbody>
               </table>
-              {!itemsLoading && lineItems.length === 0 && <div className="empty-state">{t('common.noData')}</div>}
+              {!itemsLoading && !editing && lineItems.length === 0 && <div className="empty-state">{t('common.noData')}</div>}
             </div>
+            {editing && (
+              <div style={{ marginTop: 16 }}>
+                <div className="field">
+                  <label htmlFor="od-add-product">Добавить товар</label>
+                  <div className="select-wrap">
+                    <select
+                      id="od-add-product"
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) addProduct(e.target.value)
+                      }}
+                    >
+                      <option value="">Выберите товар…</option>
+                      {addableProducts.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — {p.price} / {unit(p.unit)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {editError && (
+                  <div style={{ color: 'var(--gesso-danger, #c02828)', fontSize: 14, fontWeight: 600, marginTop: 12 }}>{editError}</div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                  <Button variant="text" onClick={cancelEditing} disabled={savingEdit}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button variant="primary" onClick={saveEditing} disabled={savingEdit}>
+                    {savingEdit ? 'Сохраняем…' : 'Сохранить'}
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="totals-row">
+              {order.deliveryFee > 0 && (
+                <div className="t-block">
+                  <div className="t-label">{t('orderDetail.deliveryFee')}</div>
+                  <div className="t-value" style={{ fontSize: 'var(--gesso-text-lg)' }}>
+                    {formatMoney(order.deliveryFee)}
+                  </div>
+                </div>
+              )}
               <div className="t-block">
-                <div className="t-label">{t('orderDetail.deliveryFee')}</div>
+                <div className="t-label">{t('common.totalNet')}</div>
                 <div className="t-value" style={{ fontSize: 'var(--gesso-text-lg)' }}>
-                  {formatMoney(order.deliveryFee)}
+                  {formatMoney(totalNet)}
                 </div>
               </div>
               <div className="t-block">
-                <div className="t-label">{t('orderDetail.orderTotal')}</div>
-                <div className="t-value">{formatMoney(total)}</div>
+                <div className="t-label">{t('orderDetail.vat')}</div>
+                <div className="t-value" style={{ fontSize: 'var(--gesso-text-lg)' }}>
+                  {formatMoney(vat)}
+                </div>
+              </div>
+              <div className="t-block">
+                <div className="t-label">{t('orderDetail.totalWithVat')}</div>
+                <div className="t-value">{formatMoney(totalNet + vat)}</div>
               </div>
             </div>
           </Card>
@@ -371,6 +541,12 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                 <span className="k">{t('common.contact')}</span>
                 <span className="v">{order.meta}</span>
               </div>
+              {order.deliverySlot && (
+                <div className="info-row">
+                  <span className="k">{t('orderDetail.deliveryTime')}</span>
+                  <span className="v">{order.deliverySlot}</span>
+                </div>
+              )}
               <div className="info-row">
                 <span className="k">{t('orderDetail.paymentStatus')}</span>
                 <span className="v" style={payment === 'paid' ? { color: 'var(--gesso-accent)' } : undefined}>
@@ -388,8 +564,8 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
           <Card>
             <p className="section-label">{t('orderDetail.manageOrder')}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <Button variant="ghost" block>
-                {t('orderDetail.editOrder')}
+              <Button variant="ghost" block onClick={startEditing} disabled={editing || itemsLoading || status === 'cancelled'}>
+                {editing ? 'Идёт редактирование…' : t('orderDetail.editOrder')}
               </Button>
               <Button
                 variant="danger-text"
@@ -463,7 +639,10 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                   </div>
                 </div>
                 <div className="related-right">
-                  <span className="related-amount">{related.total}</span>
+                  <span className="related-amount">
+                    {related.total}
+                    <span className="total-with-vat">{t('common.withVat')} {related.totalWithVat}</span>
+                  </span>
                   <ChevronRightIcon />
                 </div>
               </Link>

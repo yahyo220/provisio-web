@@ -1,4 +1,5 @@
 import { formatMoney, formatOrderDate, formatRelative, initialsOf, parseMoney } from './format'
+import { withVat } from './vat'
 import { placeholderImage, type OrderLineItem } from './data'
 import { supabase } from './supabase'
 import type {
@@ -42,25 +43,41 @@ export interface FetchedData {
   driverRows: DriverRow[]
 }
 
+const PAGE_SIZE = 1000
+
+/** Every row a query matches, fetched page by page. Supabase answers a
+ * single select with at most 1000 rows (the project's max-rows setting) and
+ * silently drops the rest — order_items crosses that after ~100 orders, and
+ * every total built from it was quietly wrong from then on. [query] must
+ * sort by something unique (end with .order('id')) so pages neither repeat
+ * nor skip rows. */
+async function selectAllRows<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const rows: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await query(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+    rows.push(...(data ?? []))
+    if (!data || data.length < PAGE_SIZE) return rows
+  }
+}
+
 /** Pulls every table in parallel and joins everything client-side — simple and
  * predictable, and fine at the row counts a B2B dashboard like this deals with. */
 export async function fetchAll(): Promise<FetchedData> {
   const db = assertClient()
 
-  const [productsRes, customersRes, ordersRes, itemsRes, deliveriesRes, driversRes] = await Promise.all([
-    db.from('products').select('*').order('updated_at', { ascending: false }),
-    db.from('customers').select('*').order('created_at', { ascending: false }),
-    db.from('orders').select('*').order('created_at', { ascending: false }),
-    db.from('order_items').select('order_id, product_id, qty, unit_price'),
-    db.from('deliveries').select('*').order('created_at', { ascending: false }),
-    db.from('drivers').select('*').order('name', { ascending: true }),
+  const [productRows, customerRows, orderRows, itemRows, deliveryRows, driverDbRows] = await Promise.all([
+    selectAllRows((from, to) => db.from('products').select('*').order('updated_at', { ascending: false }).order('id').range(from, to)),
+    selectAllRows((from, to) => db.from('customers').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+    selectAllRows((from, to) => db.from('orders').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+    selectAllRows((from, to) => db.from('order_items').select('id, order_id, product_id, qty, unit_price').order('id').range(from, to)),
+    selectAllRows((from, to) => db.from('deliveries').select('*').order('created_at', { ascending: false }).order('id').range(from, to)),
+    selectAllRows((from, to) => db.from('drivers').select('*').order('name', { ascending: true }).order('id').range(from, to)),
   ])
 
-  for (const res of [productsRes, customersRes, ordersRes, itemsRes, deliveriesRes, driversRes]) {
-    if (res.error) throw res.error
-  }
-
-  const products: ProductRow[] = (productsRes.data ?? []).map((row) => ({
+  const products: ProductRow[] = productRows.map((row) => ({
     id: row.id,
     name: row.name,
     sku: row.sku,
@@ -87,6 +104,7 @@ export async function fetchAll(): Promise<FetchedData> {
     stock: row.stock as StockStatus,
     active: row.active,
     updated: formatRelative(row.updated_at),
+    updatedAt: row.updated_at,
     image: row.image_url || placeholderImage,
   }))
 
@@ -94,9 +112,9 @@ export async function fetchAll(): Promise<FetchedData> {
   // Dashboard's Recent Orders table shows a "Products" column per order —
   // order_items only carries product_id, not a name, but products was
   // already fetched in full above, so a join here needs no extra query.
-  const productNameById = new Map((productsRes.data ?? []).map((p) => [p.id as string, p.name as string]))
+  const productNameById = new Map(productRows.map((p) => [p.id as string, p.name as string]))
   const itemNamesByOrder = new Map<string, string[]>()
-  for (const item of itemsRes.data ?? []) {
+  for (const item of itemRows) {
     totalsByOrder.set(item.order_id, (totalsByOrder.get(item.order_id) ?? 0) + item.qty * Number(item.unit_price))
     const name = item.product_id ? productNameById.get(item.product_id) : undefined
     if (!name) continue
@@ -105,11 +123,11 @@ export async function fetchAll(): Promise<FetchedData> {
     else itemNamesByOrder.set(item.order_id, [name])
   }
 
-  const customersById = new Map((customersRes.data ?? []).map((c) => [c.id, c]))
+  const customersById = new Map(customerRows.map((c) => [c.id, c]))
   const ordersByCustomer = new Map<string, number>()
   const spentByCustomer = new Map<string, number>()
 
-  const orders: OrderRow[] = (ordersRes.data ?? []).map((row) => {
+  const orders: OrderRow[] = orderRows.map((row) => {
     const customer = row.customer_id ? customersById.get(row.customer_id) : null
     const total = (totalsByOrder.get(row.id) ?? 0) + Number(row.delivery_fee ?? 0)
     // Matches every other money aggregation in this codebase (stats.ts's
@@ -131,14 +149,18 @@ export async function fetchAll(): Promise<FetchedData> {
       createdAt: row.created_at,
       total: formatMoney(total),
       totalRaw: total,
+      totalWithVat: formatMoney(withVat(total)),
       deliveryFee: Number(row.delivery_fee ?? 0),
       payment: row.payment as PaymentStatus,
       status: row.status as OrderStatus,
       products: formatProductsSummary(itemNamesByOrder.get(row.id)),
+      deliverySlot: row.delivery_slot || '',
+      deliveryAddress: row.delivery_address || '',
+      paymentMethod: row.payment_method || '',
     }
   })
 
-  const customers: CustomerRow[] = (customersRes.data ?? []).map((row) => ({
+  const customers: CustomerRow[] = customerRows.map((row) => ({
     id: row.id,
     name: row.name,
     type: row.type,
@@ -166,7 +188,7 @@ export async function fetchAll(): Promise<FetchedData> {
     createdAt: row.created_at,
   }))
 
-  const driverRows: DriverRow[] = (driversRes.data ?? []).map((row) => ({
+  const driverRows: DriverRow[] = driverDbRows.map((row) => ({
     id: row.id,
     name: row.name,
     phone: row.phone || '',
@@ -175,10 +197,10 @@ export async function fetchAll(): Promise<FetchedData> {
     loginLockedAt: row.login_locked_at ?? null,
   }))
 
-  const driversById = new Map((driversRes.data ?? []).map((d) => [d.id, d]))
-  const ordersById = new Map((ordersRes.data ?? []).map((o) => [o.id, o]))
+  const driversById = new Map(driverDbRows.map((d) => [d.id, d]))
+  const ordersById = new Map(orderRows.map((o) => [o.id, o]))
 
-  const deliveries: DeliveryRow[] = (deliveriesRes.data ?? []).map((row) => {
+  const deliveries: DeliveryRow[] = deliveryRows.map((row) => {
     const order = row.order_id ? ordersById.get(row.order_id) : null
     const driver = row.driver_id ? driversById.get(row.driver_id) : null
     return {
@@ -194,9 +216,9 @@ export async function fetchAll(): Promise<FetchedData> {
     }
   })
 
-  const drivers = (driversRes.data ?? []).map((d) => d.name)
+  const drivers = driverDbRows.map((d) => d.name)
 
-  const orderItems: OrderItemRow[] = (itemsRes.data ?? []).map((item) => ({
+  const orderItems: OrderItemRow[] = itemRows.map((item) => ({
     orderId: item.order_id,
     productId: item.product_id,
     qty: Number(item.qty),
@@ -546,15 +568,25 @@ export async function fetchOrderItems(orderId: string): Promise<OrderLineItem[]>
   }))
 }
 
-export async function updateOrderItemQty(itemId: string, qty: number) {
-  const db = assertClient()
-  const { error } = await db.from('order_items').update({ qty }).eq('id', itemId)
-  if (error) throw error
+/** One line of an edited order, as admin_save_order_items (migration 0061)
+ * takes it: `id` is the existing order_items row, or null for a line the
+ * admin is adding. */
+export interface SaveOrderItemInput {
+  id: string | null
+  product_id: string | null
+  name: string
+  sku: string
+  unit: string
+  image_url: string
+  qty: number
+  unit_price: number
 }
 
-export async function updateOrderItemPrice(itemId: string, unitPrice: number) {
+/** Saves the whole edited item list of an order in one transaction — kept
+ * lines get the new qty/price, lines left out are removed, new ones added. */
+export async function saveOrderItems(orderId: string, items: SaveOrderItemInput[]) {
   const db = assertClient()
-  const { error } = await db.from('order_items').update({ unit_price: unitPrice }).eq('id', itemId)
+  const { error } = await db.rpc('admin_save_order_items', { p_order_id: orderId, p_items: items })
   if (error) throw error
 }
 

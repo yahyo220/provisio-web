@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
+import { isLoginLocked } from '../lib/loginLock'
 import { useData } from '../store/DataContext'
 
 export default function Couriers() {
@@ -102,7 +103,7 @@ export default function Couriers() {
                     )}
                   </td>
                   <td>
-                    {d.loginLockedAt ? (
+                    {isLoginLocked(d.loginLockedAt) ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span className="cat-tag" style={{ color: 'var(--danger, #d33)' }}>
                           Заблокирован

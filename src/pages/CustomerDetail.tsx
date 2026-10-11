@@ -9,6 +9,7 @@ import StatusBadge from '../components/ui/StatusBadge'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
 import { setCustomerPassword } from '../lib/api'
+import { isLoginLocked } from '../lib/loginLock'
 import type { CustomerRow } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -377,7 +378,10 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
                       </div>
                       <div className="related-right">
                         <StatusBadge status={order.status} />
-                        <span className="related-amount">{order.total}</span>
+                        <span className="related-amount">
+                          {order.total}
+                          <span className="total-with-vat">{t('common.withVat')} {order.totalWithVat}</span>
+                        </span>
                       </div>
                     </Link>
                   )
@@ -630,11 +634,11 @@ function PersonPanel({ person }: { person: CustomerRow }) {
             )}
           </div>
 
-          {loginLockedAt && (
+          {isLoginLocked(loginLockedAt) && (
             <div className="status-row" style={{ marginTop: 16 }}>
               <div>
                 <div className="lbl">Аккаунт заблокирован</div>
-                <div className="sub">3 неверные попытки входа подряд — клиент не может войти в приложение, пока вы не разблокируете.</div>
+                <div className="sub">5 неверных попыток входа подряд — вход закрыт на 15 минут, потом откроется сам. Можно разблокировать сразу.</div>
               </div>
               <Button variant="primary" onClick={handleUnlock} disabled={unlocking}>
                 {unlocking ? 'Разблокируем…' : 'Разблокировать'}

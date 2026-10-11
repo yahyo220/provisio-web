@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   assignDriverToDelivery,
   createCourierAccount,
@@ -134,9 +134,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [driverRows, setDriverRows] = useState<DriverRow[]>([])
   const [loading, setLoading] = useState(connected)
 
+  // Bumped on every fetch so a slow, older fetch that finishes after a newer
+  // one can't overwrite fresher data with stale rows.
+  const latestFetch = useRef(0)
+
   const refresh = useCallback(async () => {
     if (!connected) return
+    const fetchId = ++latestFetch.current
     const data = await fetchAll()
+    if (fetchId !== latestFetch.current) return
     setProducts(data.products)
     setOrders(data.orders)
     setOrderItems(data.orderItems)
@@ -155,19 +161,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
     })
 
     // Any change on any of these tables (from this tab, another tab, or the
-    // mobile app) refetches everything — simple, and plenty fast at this scale.
+    // mobile app) refetches everything. One new order alone fires an orders
+    // insert, a deliveries insert and an event per order_items row, so
+    // changes are gathered for a moment and refetched once.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const scheduleRefresh = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        refresh().catch((err) => console.error('Failed to refresh data from Supabase', err))
+      }, 500)
+    }
     const client = supabase
     const channel = client
       .channel('provisio-data')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, () => refresh())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, () => refresh())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, scheduleRefresh)
       .subscribe()
 
     return () => {
+      clearTimeout(timer)
       client.removeChannel(channel)
     }
   }, [connected, refresh])
@@ -220,6 +236,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               stock: input.stock,
               active: input.active,
               updated: 'Just now',
+              updatedAt: new Date().toISOString(),
               image: input.imageUrl ?? '',
             },
             ...prev,

@@ -158,7 +158,7 @@ export default function Dashboard() {
                 <th>{t('common.customer')}</th>
                 <th>{t('common.date')}</th>
                 <th>{t('table.products')}</th>
-                <th>{t('common.total')}</th>
+                <th>{t('common.totalNet')}</th>
                 <th>{t('common.payment')}</th>
                 <th>{t('common.status')}</th>
               </tr>
@@ -188,7 +188,10 @@ export default function Dashboard() {
                   </td>
                   <td>{order.date}</td>
                   <td>{order.products}</td>
-                  <td className="amount">{order.total}</td>
+                  <td className="amount">
+                    {order.total}
+                    <span className="total-with-vat">{t('common.withVat')} {order.totalWithVat}</span>
+                  </td>
                   <td>
                     <PaymentLabel status={order.payment} />
                   </td>

@@ -1,12 +1,11 @@
 import { ArrowUpDown, CircleCheck, Copy, Download, Pencil, Plus, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
 import Modal from '../components/ui/Modal'
 import Pagination from '../components/ui/Pagination'
-import StockBadge from '../components/ui/StockBadge'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
 import { suggestNextSku } from '../lib/data'
@@ -17,7 +16,9 @@ const PAGE_SIZE = 20
 
 // Column widths shared between the header table and the body table below —
 // see the comment by their markup for why there are two separate tables.
-const COLUMN_WIDTHS = ['26%', '11%', '7%', '6%', '12%', '9%', '15%', '14%']
+// Stock and last-updated live on the product page now — the list keeps
+// the room for the name, category and price, which used to wrap and overlap.
+const COLUMN_WIDTHS = ['34%', '20%', '16%', '9%', '9%', '12%']
 
 function ProductColgroup() {
   return (
@@ -32,6 +33,7 @@ function ProductColgroup() {
 export default function Products() {
   const { products, toggleProductActive, removeProduct, updateProduct, addProduct } = useData()
   const { t, category, unit } = useLanguage()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
@@ -57,7 +59,9 @@ export default function Products() {
     if (activeCategory) list = list.filter((p) => p.category === activeCategory)
     if (status) list = list.filter((p) => (status === 'active' ? p.active : !p.active))
     if (sortByUpdated) {
-      list = [...list].sort((a, b) => a.updated.localeCompare(b.updated))
+      // Newest first, by the real timestamp — `updated` is display text
+      // ("2 weeks ago"), which used to be compared alphabetically.
+      list = [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     }
     return list
   }, [products, search, activeCategory, status, sortByUpdated])
@@ -301,9 +305,7 @@ export default function Products() {
                   <th>{t('common.category')}</th>
                   <th>{t('common.price')}</th>
                   <th>{t('common.unit')}</th>
-                  <th>{t('common.stock')}</th>
                   <th>{t('products.tableActive')}</th>
-                  <th>{t('products.lastUpdated')}</th>
                   <th style={{ textAlign: 'right' }}>{t('common.actions')}</th>
                 </tr>
               </thead>
@@ -315,13 +317,21 @@ export default function Products() {
               <tbody>
               {pageItems.length === 0 && (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={6}>
                     <div className="empty-state">{t('products.empty')}</div>
                   </td>
                 </tr>
               )}
               {pageItems.map((product) => (
-                <tr key={product.sku}>
+                <tr
+                  key={product.sku}
+                  className="row-link"
+                  tabIndex={0}
+                  onClick={() => navigate(`/products/${product.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.target === e.currentTarget) navigate(`/products/${product.id}`)
+                  }}
+                >
                   <td>
                     <div className="prod-cell">
                       <div className="prod-thumb sm" style={{ overflow: 'hidden' }}>
@@ -334,7 +344,9 @@ export default function Products() {
                     </div>
                   </td>
                   <td>
-                    <span className="cat-tag">{category(product.category)}</span>
+                    <span className="cat-tag" title={category(product.category)}>
+                      {category(product.category)}
+                    </span>
                   </td>
                   <td>
                     <span className="price-val">{product.price}</span>
@@ -342,10 +354,8 @@ export default function Products() {
                   <td>
                     <span className="unit-muted">{unit(product.unit)}</span>
                   </td>
-                  <td>
-                    <StockBadge status={product.stock} />
-                  </td>
-                  <td>
+                  {/* Clicks here belong to the switch / buttons, not to the row. */}
+                  <td onClick={(e) => e.stopPropagation()}>
                     <Switch
                       checked={product.active}
                       onChange={() => toggleProductActive(product.id)}
@@ -353,10 +363,7 @@ export default function Products() {
                       size="sm"
                     />
                   </td>
-                  <td>
-                    <span className="updated-cell">{product.updated}</span>
-                  </td>
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
                     <div className="row-actions">
                       <Link to={`/products/${product.id}`} className="action-btn" aria-label="Edit product">
                         <Pencil />

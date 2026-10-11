@@ -26,10 +26,20 @@ export interface OrderRow {
   total: string
   /** Same amount as `total`, unformatted — for stats math (see lib/stats.ts). */
   totalRaw: number
+  /** `total` (which is before VAT) with 12% VAT added — what the customer
+   * pays and what invoices and the app show. Formatted. */
+  totalWithVat: string
   deliveryFee: number
   payment: PaymentStatus
   status: OrderStatus
   products?: string
+  /** The delivery time the shopper picked at checkout ("Завтра, 09:00 – 10:00")
+   * — empty for orders placed before migration 0059 or on the website. */
+  deliverySlot?: string
+  /** orders.delivery_address — where the shopper asked to deliver. */
+  deliveryAddress?: string
+  /** orders.payment_method — 'cash' | 'transfer' ('card' on very old orders). */
+  paymentMethod?: string
 }
 
 /** One order_items row, joined just enough for stats math (category
@@ -82,6 +92,8 @@ export interface ProductRow {
   stock: StockStatus
   active: boolean
   updated: string
+  /** Raw products.updated_at (ISO) — for sorting and the product page's date. */
+  updatedAt: string
   image: string
 }
 
@@ -139,9 +151,9 @@ export interface CustomerRow {
    * one of these two. */
   cashEnabled: boolean
   cashRequested: boolean
-  /** Set once 3 failed sign-in attempts locked the account (see
-   * migration 0044_login_attempt_lockout.sql) — null means not locked.
-   * Only an admin can clear it; a customer can never unlock themselves. */
+  /** Set when 5 failed sign-in attempts locked the account (see
+   * migrations 0044/0060) — null means not locked. The lock expires on its
+   * own after 15 minutes, so use isLoginLocked() (lib/loginLock.ts), not this alone. */
   loginLockedAt: string | null
   /** Raw ISO timestamp — for stats math (see lib/stats.ts), same idea as OrderRow.createdAt. */
   createdAt: string
