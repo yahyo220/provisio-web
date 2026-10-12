@@ -1515,6 +1515,19 @@ td.amount {
   font-size: var(--gesso-text-md);
 }
 
+/* Company name under an order number — numbers count per company (0062). */
+.order-company {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--gesso-font-body);
+  font-size: var(--gesso-text-xs);
+  font-weight: 500;
+  color: var(--gesso-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Second line under a pre-VAT order total: the same order with 12% VAT. */
 .total-with-vat {
   display: block;

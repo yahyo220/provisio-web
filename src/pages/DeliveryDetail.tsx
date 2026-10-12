@@ -5,6 +5,7 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import DeliveryStatusBadge from '../components/ui/DeliveryStatusBadge'
 import { useLanguage } from '../i18n/LanguageContext'
+import { orderLabel } from '../lib/format'
 import type { DeliveryRow, DeliveryStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 
@@ -198,7 +199,7 @@ function DeliveryDetailForm({ delivery }: { delivery: DeliveryRow }) {
                   </div>
                   <div className="related-text">
                     <div className="related-title">
-                      {t('common.order')} #{order.orderNumber}
+                      {t('common.order')} {orderLabel(order)}
                     </div>
                     <div className="related-meta">
                       {order.date} · {order.total} ({t('common.withVat')} {order.totalWithVat})

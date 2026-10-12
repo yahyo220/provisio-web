@@ -10,7 +10,7 @@ import { useLanguage } from '../i18n/LanguageContext'
 import { fetchOrderFeedback, fetchOrderItems, saveOrderItems, type OrderFeedbackRow, type SaveOrderItemInput } from '../lib/api'
 import { placeholderImage, type OrderLineItem } from '../lib/data'
 import { downloadOrderExcel } from '../lib/exportOrderExcel'
-import { formatMoney, parseMoney } from '../lib/format'
+import { formatMoney, orderLabel, parseMoney } from '../lib/format'
 import { printOrder } from '../lib/printOrder'
 import { supabase } from '../lib/supabase'
 import type { OrderRow, OrderStatus, PaymentStatus } from '../lib/types'
@@ -287,7 +287,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
           </Link>
           <div>
             <h1>
-              {t('common.order')} #{order.orderNumber}
+              {t('common.order')} №{order.orderNumber} · {order.companyName}
             </h1>
             <p className="order-meta" style={{ fontSize: 14, color: 'var(--gesso-fg-muted)', marginTop: 8 }}>
               {t('orderDetail.placed')} {order.date} · {order.customer}
@@ -587,7 +587,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
 
       {confirmingCancel && (
         <Modal
-          title={`Отменить заказ #${order.orderNumber}?`}
+          title={`Отменить заказ ${orderLabel(order)}?`}
           onClose={() => setConfirmingCancel(false)}
           footer={
             <>
@@ -633,7 +633,7 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
                   </div>
                   <div className="related-text">
                     <div className="related-title">
-                      {t('common.order')} #{related.orderNumber}
+                      {t('common.order')} №{related.orderNumber}
                     </div>
                     <div className="related-meta">{related.date}</div>
                   </div>

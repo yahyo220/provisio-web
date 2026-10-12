@@ -1,5 +1,11 @@
 /** Small formatting helpers for turning raw Supabase rows into display strings. */
 
+/** "Чайхана №5" — order numbers count per company (migration 0062), so on
+ * their own they're ambiguous; with the company they aren't. */
+export function orderLabel(order: { companyName: string; orderNumber: number }): string {
+  return `${order.companyName} №${order.orderNumber}`
+}
+
 export function formatRelative(iso: string): string {
   const then = new Date(iso).getTime()
   const diffMs = Date.now() - then

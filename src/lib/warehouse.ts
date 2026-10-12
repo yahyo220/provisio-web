@@ -133,6 +133,8 @@ export interface WriteOffView {
   /** The comment typed on a manual write-off, or "Заказ №19 · Клиент". */
   note: string
   orderNumber: number | null
+  /** orders.id for "По заказу" rows (numbers repeat across companies). */
+  orderId: string | null
   /** Manual: purchase value lost. По заказу: what the customer was charged, before VAT. */
   amount: number
 }
@@ -279,6 +281,7 @@ export function manualWriteOffViews(state: WarehouseState, productsById: Map<str
       reason: w.reason,
       note: w.comment,
       orderNumber: null,
+      orderId: null,
       amount: w.loss,
     }
   })
@@ -301,8 +304,9 @@ export function orderWriteOffViews(orders: OrderRow[], items: OrderItemRow[]): W
       unit: item.unit,
       qty: item.qty,
       reason: 'order',
-      note: `Заказ №${order.orderNumber} · ${order.customer}`,
+      note: `Заказ ${order.companyName} №${order.orderNumber} · ${order.customer}`,
       orderNumber: order.orderNumber,
+      orderId: order.id,
       amount: item.qty * item.unitPrice,
     })
   })

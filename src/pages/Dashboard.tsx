@@ -181,7 +181,10 @@ export default function Dashboard() {
                     if (e.key === 'Enter') navigate(`/orders/${order.id}`)
                   }}
                 >
-                  <td className="order-id">#{order.orderNumber}</td>
+                  <td className="order-id">
+                    №{order.orderNumber}
+                    <span className="order-company">{order.companyName}</span>
+                  </td>
                   <td>
                     <div className="cust">{order.customer}</div>
                     <div className="cust-sub">{order.meta}</div>

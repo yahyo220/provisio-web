@@ -8,6 +8,7 @@ import Modal from '../components/ui/Modal'
 import StatusBadge from '../components/ui/StatusBadge'
 import Switch from '../components/ui/Switch'
 import { useLanguage } from '../i18n/LanguageContext'
+import { orderLabel } from '../lib/format'
 import { setCustomerPassword } from '../lib/api'
 import { isLoginLocked } from '../lib/loginLock'
 import type { CustomerRow } from '../lib/types'
@@ -368,7 +369,7 @@ function CustomerDetailForm({ root }: { root: CustomerRow }) {
                         </div>
                         <div className="related-text">
                           <div className="related-title">
-                            {t('common.order')} #{order.orderNumber}
+                            {t('common.order')} {orderLabel(order)}
                           </div>
                           <div className="related-meta">
                             {order.date}

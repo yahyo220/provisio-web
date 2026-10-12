@@ -9,6 +9,7 @@ import Pagination from '../components/ui/Pagination'
 import PaymentLabel from '../components/ui/PaymentLabel'
 import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../i18n/LanguageContext'
+import { orderLabel } from '../lib/format'
 import type { OrderStatus, PaymentStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
 import ProductSummaryModal from './orders/ProductSummaryModal'
@@ -28,7 +29,7 @@ export default function Orders() {
   const [thisWeek, setThisWeek] = useState(false)
   const [sortAsc, setSortAsc] = useState(false)
   const [page, setPage] = useState(1)
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; orderNumber: number } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null)
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -47,6 +48,7 @@ export default function Orders() {
       list = list.filter(
         (o) =>
           String(o.orderNumber).includes(q) ||
+          o.companyName.toLowerCase().includes(q) ||
           o.customer.toLowerCase().includes(q) ||
           o.meta.toLowerCase().includes(q),
       )
@@ -176,7 +178,10 @@ export default function Orders() {
 
           {pageItems.map((order) => (
             <Link className="order-row" to={`/orders/${order.id}`} key={order.id}>
-              <span className="order-id">#{order.orderNumber}</span>
+              <span className="order-id">
+                №{order.orderNumber}
+                <span className="order-company">{order.companyName}</span>
+              </span>
               <div className="order-cust">
                 <span className="name">{order.customer}</span>
                 <span className="meta">{order.meta}</span>
@@ -200,7 +205,7 @@ export default function Orders() {
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    setDeleteTarget({ id: order.id, orderNumber: order.orderNumber })
+                    setDeleteTarget({ id: order.id, label: orderLabel(order) })
                   }}
                   style={{ color: 'var(--gesso-error, #c02828)' }}
                 >
@@ -232,7 +237,7 @@ export default function Orders() {
 
       {deleteTarget && (
         <Modal
-          title={`Удалить заказ #${deleteTarget.orderNumber}?`}
+          title={`Удалить заказ ${deleteTarget.label}?`}
           onClose={() => setDeleteTarget(null)}
           footer={
             <>

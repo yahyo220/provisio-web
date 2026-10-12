@@ -14,8 +14,15 @@ export type StockStatus = 'in' | 'low' | 'out'
 export interface OrderRow {
   /** Supabase row id (uuid) — used in routes, e.g. /orders/:id */
   id: string
-  /** Human-friendly sequential number shown as "#4821" */
+  /** The number people see: this company's own count (№1, №2… per company,
+   * migration 0062). Two companies can both have a №5 — show it with
+   * companyName (see orderLabel). */
   orderNumber: number
+  /** orders.order_number — system-wide, unique; internal use only. */
+  globalNumber: number
+  /** The company the order belongs to (its company root): company_name, or
+   * the root account's name. */
+  companyName: string
   customerId: string | null
   customer: string
   meta: string

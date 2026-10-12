@@ -139,9 +139,13 @@ export async function fetchAll(): Promise<FetchedData> {
       ordersByCustomer.set(row.customer_id, (ordersByCustomer.get(row.customer_id) ?? 0) + 1)
       spentByCustomer.set(row.customer_id, (spentByCustomer.get(row.customer_id) ?? 0) + total)
     }
+    // Linked staff order under their company root (orders.company_id, 0062).
+    const company = (row.company_id ? customersById.get(row.company_id) : null) ?? customer
     return {
       id: row.id,
-      orderNumber: row.order_number,
+      orderNumber: row.company_order_number ?? row.order_number,
+      globalNumber: row.order_number,
+      companyName: company?.company_name || company?.name || '—',
       customerId: row.customer_id,
       customer: customer?.name ?? '—',
       meta: customer ? `${customer.type} · ${customer.location ?? ''}`.replace(/ · $/, '') : '—',
@@ -205,7 +209,7 @@ export async function fetchAll(): Promise<FetchedData> {
     const driver = row.driver_id ? driversById.get(row.driver_id) : null
     return {
       id: row.id,
-      orderId: order ? `#${order.order_number}` : '—',
+      orderId: order ? `№${order.company_order_number ?? order.order_number}` : '—',
       orderDbId: row.order_id ?? null,
       customer: order?.customer_id ? (customersById.get(order.customer_id)?.name ?? '—') : '—',
       address: row.address || '—',
@@ -736,7 +740,7 @@ export async function fetchFeedbackDetail(feedbackId: string): Promise<FeedbackD
   const db = assertClient()
   const { data, error } = await db
     .from('order_feedback')
-    .select('id, message, photo_urls, created_at, order_id, orders(order_number), customers(name)')
+    .select('id, message, photo_urls, created_at, order_id, orders(order_number, company_order_number), customers(name)')
     .eq('id', feedbackId)
     .maybeSingle()
   if (error) throw error
@@ -749,7 +753,7 @@ export async function fetchFeedbackDetail(feedbackId: string): Promise<FeedbackD
     photoUrls: Array.isArray(data.photo_urls) ? data.photo_urls : [],
     createdAt: data.created_at,
     orderId: data.order_id,
-    orderNumber: order?.order_number ?? null,
+    orderNumber: order?.company_order_number ?? order?.order_number ?? null,
     customerName: customer?.name ?? null,
   }
 }

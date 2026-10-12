@@ -187,7 +187,8 @@ Deno.serve(async (req) => {
           .eq('id', record.customer_id as string)
           .maybeSingle()
         const title = ORDER_STATUS_LABEL[newStatus]
-        const body = `Заказ №${record.order_number ?? ''}`.trim()
+        // The company's own order number (0062), the one the customer sees.
+        const body = `Заказ №${record.company_order_number ?? record.order_number ?? ''}`.trim()
         const data = { type: 'order_status', orderId: String(record.id ?? '') }
         await storeNotification({ customer_id: record.customer_id as string }, 'order_status', title, body, data)
         await sendPushToAll(customer?.fcm_tokens, title, body, data)

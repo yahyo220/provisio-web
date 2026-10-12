@@ -53,7 +53,7 @@ export default function WriteOffsTab({ state, productsById }: { state: Warehouse
   const byOrder = filtered.filter((w) => w.reason === 'order')
   const lossSum = losses.reduce((sum, w) => sum + w.amount, 0)
   const orderSum = byOrder.reduce((sum, w) => sum + w.amount, 0)
-  const orderCount = new Set(byOrder.map((w) => w.orderNumber)).size
+  const orderCount = new Set(byOrder.map((w) => w.orderId)).size
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount)

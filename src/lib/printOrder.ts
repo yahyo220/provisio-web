@@ -2,7 +2,7 @@
 // sidebar, buttons or dashboard chrome — printed from a hidden iframe, so
 // it needs no popup permission and leaves the page itself untouched.
 import type { OrderLineItem } from './data'
-import { formatMoney } from './format'
+import { formatMoney, orderLabel } from './format'
 import type { CustomerRow, OrderRow } from './types'
 import { vatOf } from './vat'
 
@@ -43,7 +43,7 @@ export function orderSheetHtml(order: OrderRow, customer: CustomerRow | undefine
     )
     .join('')
   return `<!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><title>Заказ №${order.orderNumber}</title>
+<html lang="ru"><head><meta charset="utf-8"><title>Заказ ${esc(orderLabel(order))}</title>
 <style>
   @page { size: A4; margin: 16mm; }
   body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; color: #111; font-size: 12pt; }
@@ -62,6 +62,7 @@ export function orderSheetHtml(order: OrderRow, customer: CustomerRow | undefine
 </style></head>
 <body>
   <h1>Заказ №${order.orderNumber}</h1>
+  <div class="muted">${esc(order.companyName)}</div>
   <div class="muted">Оформлен ${esc(new Date(order.createdAt).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' }))}</div>
   <table class="info">${info
     .filter(([, v]) => v)

@@ -5,6 +5,7 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import RevenueChart from '../components/ui/RevenueChart'
 import { useLanguage } from '../i18n/LanguageContext'
+import { orderLabel } from '../lib/format'
 import { fetchOrderItems } from '../lib/api'
 import {
   downloadOrderExcelWithMargin,
@@ -275,7 +276,7 @@ export default function Analytics() {
                   <option value="">{t('analytics.invoices.selectOrder')}</option>
                   {sortedOrders.map((o) => (
                     <option key={o.id} value={o.id}>
-                      #{o.orderNumber} · {o.customer} · {o.date}
+                      {orderLabel(o)} · {o.customer} · {o.date}
                     </option>
                   ))}
                 </select>

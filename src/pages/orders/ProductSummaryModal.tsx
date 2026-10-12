@@ -4,6 +4,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { downloadProductSummaryExcel, formatSummaryQty, printProductSummary, summarizeItems } from '../../lib/productSummary'
+import { orderLabel } from '../../lib/format'
 import type { OrderStatus } from '../../lib/types'
 import { addDays, formatDay, toDateIso, todayIso } from '../../lib/warehouse'
 import { useData } from '../../store/DataContext'
@@ -40,7 +41,7 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
         const day = toDateIso(new Date(o.createdAt))
         return statuses.has(o.status) && (!from || day >= from) && (!to || day <= to)
       })
-      .sort((a, b) => a.orderNumber - b.orderNumber)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }, [orders, mode, from, to])
 
   const rows = useMemo(() => {
@@ -50,7 +51,7 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
 
   const period = from === to ? formatDay(from) : `${formatDay(from)} – ${formatDay(to)}`
   const title = `Товары по заказам — ${MODE_LABELS[mode].toLowerCase()}`
-  const subtitle = `${period} · заказов: ${chosen.length}${chosen.length ? ` (${chosen.map((o) => `№${o.orderNumber}`).join(', ')})` : ''}`
+  const subtitle = `${period} · заказов: ${chosen.length}${chosen.length ? ` (${chosen.map((o) => orderLabel(o)).join(', ')})` : ''}`
 
   function quick(days: number) {
     const end = todayIso()
