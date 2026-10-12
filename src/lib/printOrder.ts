@@ -12,7 +12,7 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
   card: 'Карта',
 }
 
-function esc(value: string): string {
+export function esc(value: string): string {
   return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 }
 
@@ -81,6 +81,12 @@ export function orderSheetHtml(order: OrderRow, customer: CustomerRow | undefine
 }
 
 export function printOrder(order: OrderRow, customer: CustomerRow | undefined, lines: OrderLineItem[], unitLabel: (u: string) => string) {
+  printHtml(orderSheetHtml(order, customer, lines, unitLabel))
+}
+
+/** Prints a complete HTML document from a hidden iframe — no popup, and the
+ * page itself stays as it is. Shared by every printable sheet on the site. */
+export function printHtml(html: string) {
   const frame = document.createElement('iframe')
   frame.setAttribute('aria-hidden', 'true')
   frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
@@ -92,7 +98,7 @@ export function printOrder(order: OrderRow, customer: CustomerRow | undefined, l
     return
   }
   doc.open()
-  doc.write(orderSheetHtml(order, customer, lines, unitLabel))
+  doc.write(html)
   doc.close()
   // Remove the frame once the print dialog is closed (afterprint), with a
   // fallback for browsers that don't fire it on iframes.

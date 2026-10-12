@@ -1,14 +1,36 @@
-import { Check, KeyRound, Plus, Truck } from 'lucide-react'
-import { useState } from 'react'
+import { Check, ClipboardList, KeyRound, Plus, Truck } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Modal from '../components/ui/Modal'
 import { isLoginLocked } from '../lib/loginLock'
+import type { PickOrder } from '../lib/pickList'
 import { useData } from '../store/DataContext'
+import PickListModal from './couriers/PickListModal'
 
 export default function Couriers() {
-  const { driverRows, addCourier, updateDriver } = useData()
+  const { driverRows, addCourier, updateDriver, deliveries, orders } = useData()
   const [open, setOpen] = useState(false)
+  const [pickFor, setPickFor] = useState<string | null>(null)
+
+  // Per courier: orders assigned to them and not collected from the
+  // warehouse yet (delivery scheduled or delayed, order still live) — what
+  // the pick list ("сборочный лист") covers.
+  const toPickUp = useMemo(() => {
+    const orderById = new Map(orders.map((o) => [o.id, o]))
+    const byDriver = new Map<string, PickOrder[]>()
+    for (const d of deliveries) {
+      if (!d.driverId || !d.orderDbId || (d.status !== 'scheduled' && d.status !== 'delayed')) continue
+      const order = orderById.get(d.orderDbId)
+      if (!order || order.status === 'cancelled' || order.status === 'delivered') continue
+      const list = byDriver.get(d.driverId) ?? []
+      list.push({ id: order.id, orderNumber: order.orderNumber, customer: order.customer, address: d.address })
+      byDriver.set(d.driverId, list)
+    }
+    for (const list of byDriver.values()) list.sort((a, b) => (a.orderNumber ?? 0) - (b.orderNumber ?? 0))
+    return byDriver
+  }, [deliveries, orders])
+  const pickDriver = driverRows.find((d) => d.id === pickFor)
   const [unlockingId, setUnlockingId] = useState<string | null>(null)
 
   async function handleUnlock(id: string) {
@@ -70,12 +92,13 @@ export default function Couriers() {
                 <th>Телефон</th>
                 <th>Вход в приложение</th>
                 <th>Статус</th>
+                <th style={{ textAlign: 'right' }}>Сборочный лист</th>
               </tr>
             </thead>
             <tbody>
               {driverRows.length === 0 && (
                 <tr>
-                  <td colSpan={4}>
+                  <td colSpan={5}>
                     <div className="empty-state">Пока нет курьеров</div>
                   </td>
                 </tr>
@@ -116,12 +139,25 @@ export default function Couriers() {
                       <span className="cat-tag">{d.active ? 'Активен' : 'Отключён'}</span>
                     )}
                   </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {(toPickUp.get(d.id)?.length ?? 0) > 0 ? (
+                      <Button variant="ghost" icon={<ClipboardList />} onClick={() => setPickFor(d.id)}>
+                        Заказов: {toPickUp.get(d.id)!.length}
+                      </Button>
+                    ) : (
+                      <span className="unit-muted">нечего забирать</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {pickDriver && toPickUp.get(pickDriver.id) && (
+        <PickListModal courier={pickDriver.name} orders={toPickUp.get(pickDriver.id)!} onClose={() => setPickFor(null)} />
+      )}
 
       {open && (
         <Modal

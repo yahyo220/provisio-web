@@ -210,6 +210,7 @@ export async function fetchAll(): Promise<FetchedData> {
       customer: order?.customer_id ? (customersById.get(order.customer_id)?.name ?? '—') : '—',
       address: row.address || '—',
       driver: driver?.name ?? '—',
+      driverId: row.driver_id ?? null,
       eta: row.eta || '—',
       status: row.status as DeliveryStatus,
       createdAt: row.created_at,
@@ -565,6 +566,30 @@ export async function fetchOrderItems(orderId: string): Promise<OrderLineItem[]>
     unitPrice: Number(row.unit_price),
     image: row.image_url || placeholderImage,
     category: (row.products as { category?: string } | null)?.category ?? '',
+  }))
+}
+
+/** One order_items row for a courier's pick list (lib/pickList.ts). */
+export interface PickSourceLine {
+  orderId: string
+  productId: string | null
+  name: string
+  qty: number
+  unit: string
+}
+
+/** Every item of [orderIds] in one request, for the pick list. */
+export async function fetchPickLines(orderIds: string[]): Promise<PickSourceLine[]> {
+  if (orderIds.length === 0) return []
+  const db = assertClient()
+  const { data, error } = await db.from('order_items').select('order_id, product_id, name, qty, unit').in('order_id', orderIds)
+  if (error) throw error
+  return (data ?? []).map((r) => ({
+    orderId: r.order_id as string,
+    productId: (r.product_id as string | null) ?? null,
+    name: r.name as string,
+    qty: Number(r.qty),
+    unit: (r.unit as string | null) ?? '',
   }))
 }
 

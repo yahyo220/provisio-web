@@ -179,6 +179,8 @@ export interface DeliveryRow {
   customer: string
   address: string
   driver: string
+  /** drivers.id of the assigned courier — null while unassigned. */
+  driverId: string | null
   eta: string
   status: DeliveryStatus
   /** Raw ISO timestamp — for stats math (see lib/stats.ts). */
