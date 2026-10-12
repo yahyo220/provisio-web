@@ -13,6 +13,7 @@ import {
   formatDayTime,
   inPeriod,
   liveBatches,
+  manualWriteOffViews,
   MOVEMENT_LABELS,
   nearestExpiry,
   periodLabel,
@@ -27,7 +28,7 @@ import {
   type Receipt,
   type StockBatch,
   type WarehouseState,
-  type WriteOff,
+  type WriteOffView,
 } from './warehouse'
 import { THIN_BORDER, triggerXlsxDownload } from './xlsxShared'
 
@@ -314,15 +315,19 @@ export async function downloadReceiptExcel(receipt: Receipt, productsById: Map<s
 // Списания
 // ---------------------------------------------------------------------------
 
-function writeOffSheet(wb: ExcelJS.Workbook, writeOffs: WriteOff[], productsById: Map<string, ProductRow>, subtitle: string) {
+/** Write-offs sheet: manual write-offs (a loss, at purchase value) and lines
+ * of delivered orders ("По заказу", at the price charged) — totalled apart,
+ * since one is a loss and the other a sale. */
+function writeOffSheet(wb: ExcelJS.Workbook, views: WriteOffView[], subtitle: string) {
   const ws = wb.addWorksheet('Списания')
-  let total = 0
+  let losses = 0
+  let ordered = 0
   const byReason = new Map<string, number>()
-  const rows = writeOffs.map((w) => {
-    const p = productsById.get(w.productId)
-    total += w.loss
-    byReason.set(w.reason, (byReason.get(w.reason) ?? 0) + w.loss)
-    return [formatDayTime(w.createdAt), p?.name ?? 'Товар удалён', w.qty, unitRu(p?.unit ?? ''), reasonRu(w.reason), w.comment, Math.round(w.loss)]
+  const rows = views.map((w) => {
+    if (w.reason === 'order') ordered += w.amount
+    else losses += w.amount
+    byReason.set(w.reason, (byReason.get(w.reason) ?? 0) + w.amount)
+    return [formatDayTime(w.at), w.name, w.qty, unitRu(w.unit), reasonRu(w.reason), w.note, Math.round(w.amount)]
   })
   const next = writeTable(
     ws,
@@ -335,30 +340,33 @@ function writeOffSheet(wb: ExcelJS.Workbook, writeOffs: WriteOff[], productsById
       { header: 'Количество', width: 12, align: 'right', format: QTY },
       { header: 'Ед.', width: 8 },
       { header: 'Причина', width: 14 },
-      { header: 'Комментарий', width: 30 },
-      { header: 'Сумма потерь, сум', width: 18, align: 'right', format: MONEY },
+      { header: 'Заказ / комментарий', width: 34 },
+      { header: 'Сумма, сум', width: 18, align: 'right', format: MONEY },
     ],
     rows,
-    ['Итого', null, null, null, null, null, Math.round(total)],
   )
   if (rows.length > 0) {
     writeTable(
       ws,
       next,
-      'По причинам',
-      'Сумма потерь по каждой причине',
+      'Итоги',
+      'Потери — по закупочной цене; «По заказу» — сумма заказов без НДС',
       [
         { header: 'Причина', width: 16 },
-        { header: 'Сумма потерь, сум', width: 18, align: 'right', format: MONEY },
+        { header: 'Сумма, сум', width: 18, align: 'right', format: MONEY },
       ],
-      WRITE_OFF_REASONS.filter((r) => byReason.has(r.value)).map((r) => [r.label, Math.round(byReason.get(r.value)!)]),
+      [
+        ...WRITE_OFF_REASONS.filter((r) => byReason.has(r.value)).map((r) => [r.label, Math.round(byReason.get(r.value)!)] as Cell[]),
+        ['Потери всего', Math.round(losses)],
+        ['По заказам всего', Math.round(ordered)],
+      ],
     )
   }
 }
 
-export async function downloadWriteOffsReport(writeOffs: WriteOff[], productsById: Map<string, ProductRow>, from: string, to: string) {
+export async function downloadWriteOffsReport(views: WriteOffView[], from: string, to: string) {
   const wb = new ExcelJS.Workbook()
-  writeOffSheet(wb, writeOffs, productsById, `${periodLabel(from, to)} · списаний: ${writeOffs.length}`)
+  writeOffSheet(wb, views, `${periodLabel(from, to)} · строк: ${views.length}`)
   await triggerXlsxDownload(wb, `Склад_Списания_${from || 'начало'}_${to || stamp()}.xlsx`)
 }
 
@@ -458,7 +466,7 @@ export async function downloadJournalReport(movements: Movement[], productsById:
  * конец, стоимость остатка) per product, followed by the stock, purchase
  * list, receipts, write-offs, expiry and journal sheets for the same period.
  */
-export async function downloadWarehouseReport(state: WarehouseState, products: ProductRow[], from: string, to: string) {
+export async function downloadWarehouseReport(state: WarehouseState, products: ProductRow[], from: string, to: string, orderViews: WriteOffView[]) {
   const wb = new ExcelJS.Workbook()
   const productsById = new Map(products.map((p) => [p.id, p]))
   const before = (iso: string) => !!from && iso.slice(0, 10) < from
@@ -509,8 +517,10 @@ export async function downloadWarehouseReport(state: WarehouseState, products: P
   writeTable(wb.addWorksheet('Приходы'), 1, 'Приходы товара', `${periodLabel(from, to)} · приходов: ${receipts.length}`, RECEIPT_COLUMNS, rc.rows, [
     'Итого', null, null, null, null, null, null, null, Math.round(rc.total), null,
   ])
-  const writeOffs = state.writeOffs.filter((w) => inPeriod(w.createdAt, from, to))
-  writeOffSheet(wb, writeOffs, productsById, `${periodLabel(from, to)} · списаний: ${writeOffs.length}`)
+  const writeOffs = [...manualWriteOffViews(state, productsById), ...orderViews]
+    .filter((w) => inPeriod(w.at, from, to))
+    .sort((a, b) => b.at.localeCompare(a.at))
+  writeOffSheet(wb, writeOffs, `${periodLabel(from, to)} · строк: ${writeOffs.length}`)
   expirySheet(wb, state, productsById)
   const movements = state.movements.filter((m) => productsById.has(m.productId) && inPeriod(m.at, from, to))
   journalSheet(wb, movements, productsById, `${periodLabel(from, to)} · движений: ${movements.length}`)

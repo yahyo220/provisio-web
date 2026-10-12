@@ -3,7 +3,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { ProductRow } from '../../lib/types'
-import { formatDay, formatQty, liveBatches, parseAmount, stockOf, WRITE_OFF_REASONS, type WarehouseState, type WriteOffReason } from '../../lib/warehouse'
+import { formatDay, formatQty, liveBatches, parseAmount, MANUAL_WRITE_OFF_REASONS, stockOf, type WarehouseState, type WriteOffReason } from '../../lib/warehouse'
 
 interface WriteOffModalProps {
   state: WarehouseState
@@ -108,7 +108,7 @@ export default function WriteOffModal({ state, products, initial, onClose, onSub
           <label htmlFor="wo-reason">Причина</label>
           <div className="select-wrap">
             <select id="wo-reason" value={reason} onChange={(e) => setReason(e.target.value as WriteOffReason)}>
-              {WRITE_OFF_REASONS.map((r) => (
+              {MANUAL_WRITE_OFF_REASONS.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
                 </option>

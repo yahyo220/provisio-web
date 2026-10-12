@@ -8,6 +8,7 @@ import { downloadWarehouseReport } from '../lib/exportWarehouse'
 import {
   addDays,
   createDemoWarehouse,
+  orderWriteOffViews,
   postReceipt,
   postWriteOff,
   todayIso,
@@ -188,7 +189,7 @@ export default function Warehouse() {
 
 /** "Отчёт по складу": pick a period, get the whole warehouse in one workbook. */
 function ReportModal({ state, onClose }: { state: WarehouseState; onClose: () => void }) {
-  const { products } = useData()
+  const { products, orders, orderItems } = useData()
   const [from, setFrom] = useState(addDays(todayIso(), -30))
   const [to, setTo] = useState(todayIso())
   const active = products.filter((p) => p.active)
@@ -201,7 +202,7 @@ function ReportModal({ state, onClose }: { state: WarehouseState; onClose: () =>
           <Button variant="text" onClick={onClose}>
             Отмена
           </Button>
-          <ExportButton label="Скачать Excel" variant="ghost" onExport={() => downloadWarehouseReport(state, active, from, to)} />
+          <ExportButton label="Скачать Excel" variant="ghost" onExport={() => downloadWarehouseReport(state, active, from, to, orderWriteOffViews(orders, orderItems))} />
         </>
       }
     >

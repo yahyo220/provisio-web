@@ -15,9 +15,9 @@
 //   stock leaves the oldest-expiring batch first;
 // - stock may go negative (an order picked up with nothing left).
 
-import type { ProductRow } from './types'
+import type { OrderItemRow, OrderRow, ProductRow } from './types'
 
-export type WriteOffReason = 'spoiled' | 'damaged' | 'expired' | 'other'
+export type WriteOffReason = 'spoiled' | 'damaged' | 'expired' | 'other' | 'order'
 export type MovementType = 'receipt' | 'order' | 'writeoff' | 'adjustment'
 export type StockState = 'in' | 'low' | 'out' | 'negative'
 
@@ -26,7 +26,12 @@ export const WRITE_OFF_REASONS: { value: WriteOffReason; label: string }[] = [
   { value: 'damaged', label: 'Брак' },
   { value: 'expired', label: 'Просрочка' },
   { value: 'other', label: 'Другое' },
+  { value: 'order', label: 'По заказу' },
 ]
+
+/** Reasons a person can pick when writing stock off by hand — "По заказу"
+ * only ever comes from delivered orders. */
+export const MANUAL_WRITE_OFF_REASONS = WRITE_OFF_REASONS.filter((r) => r.value !== 'order')
 
 export const MOVEMENT_LABELS: Record<MovementType, string> = {
   receipt: 'Приход',
@@ -113,6 +118,23 @@ export interface WriteOff {
   comment: string
   /** Purchase value of what was written off. */
   loss: number
+}
+
+/** One row of the Списания tab and its Excel: a manual write-off, or a line
+ * of an order that reached its customer ("По заказу"). */
+export interface WriteOffView {
+  id: string
+  at: string
+  productId: string | null
+  name: string
+  unit: string
+  qty: number
+  reason: WriteOffReason
+  /** The comment typed on a manual write-off, or "Заказ №19 · Клиент". */
+  note: string
+  orderNumber: number | null
+  /** Manual: purchase value lost. По заказу: what the customer was charged, before VAT. */
+  amount: number
 }
 
 export interface Movement {
@@ -242,6 +264,49 @@ export function expiryTone(dateIso: string): ExpiryTone {
 
 export function receiptTotal(receipt: Receipt): number {
   return receipt.lines.reduce((sum, l) => sum + l.qty * l.purchasePrice, 0)
+}
+
+export function manualWriteOffViews(state: WarehouseState, productsById: Map<string, ProductRow>): WriteOffView[] {
+  return state.writeOffs.map((w) => {
+    const p = productsById.get(w.productId)
+    return {
+      id: w.id,
+      at: w.createdAt,
+      productId: w.productId,
+      name: p?.name ?? 'Товар удалён',
+      unit: p?.unit ?? '',
+      qty: w.qty,
+      reason: w.reason,
+      note: w.comment,
+      orderNumber: null,
+      amount: w.loss,
+    }
+  })
+}
+
+/** Every line of every delivered order — real orders from the database, even
+ * while the rest of the warehouse runs on demo data. Dated by when the order
+ * was placed (orders carry no delivery timestamp). */
+export function orderWriteOffViews(orders: OrderRow[], items: OrderItemRow[]): WriteOffView[] {
+  const delivered = new Map(orders.filter((o) => o.status === 'delivered').map((o) => [o.id, o]))
+  const views: WriteOffView[] = []
+  items.forEach((item, i) => {
+    const order = delivered.get(item.orderId)
+    if (!order || !(item.qty > 0)) return
+    views.push({
+      id: `order-${item.orderId}-${i}`,
+      at: order.createdAt,
+      productId: item.productId,
+      name: item.name || 'Товар',
+      unit: item.unit,
+      qty: item.qty,
+      reason: 'order',
+      note: `Заказ №${order.orderNumber} · ${order.customer}`,
+      orderNumber: order.orderNumber,
+      amount: item.qty * item.unitPrice,
+    })
+  })
+  return views
 }
 
 // ---------------------------------------------------------------------------

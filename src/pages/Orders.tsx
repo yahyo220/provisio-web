@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowUp, Calendar, CreditCard, Download, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, Boxes, Calendar, CreditCard, Download, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -11,6 +11,7 @@ import StatusBadge from '../components/ui/StatusBadge'
 import { useLanguage } from '../i18n/LanguageContext'
 import type { OrderStatus, PaymentStatus } from '../lib/types'
 import { useData } from '../store/DataContext'
+import ProductSummaryModal from './orders/ProductSummaryModal'
 
 const PAGE_SIZE = 4
 
@@ -28,6 +29,7 @@ export default function Orders() {
   const [sortAsc, setSortAsc] = useState(false)
   const [page, setPage] = useState(1)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; orderNumber: number } | null>(null)
+  const [summaryOpen, setSummaryOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const statusOptions = ORDER_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))
@@ -114,6 +116,10 @@ export default function Orders() {
             }}
           />
         </div>
+        <button type="button" className="filter-chip" onClick={() => setSummaryOpen(true)}>
+          <Boxes />
+          Товары по заказам
+        </button>
         <Dropdown
           allLabel={t('orders.allStatuses')}
           options={statusOptions}
@@ -221,6 +227,8 @@ export default function Orders() {
           nextLabel={t('common.nextPage')}
         />
       </Card>
+
+      {summaryOpen && <ProductSummaryModal onClose={() => setSummaryOpen(false)} />}
 
       {deleteTarget && (
         <Modal

@@ -47,6 +47,9 @@ export interface OrderRow {
 export interface OrderItemRow {
   orderId: string
   productId: string | null
+  /** order_items.name / unit — what was ordered, as stored on the line. */
+  name: string
+  unit: string
   qty: number
   unitPrice: number
 }
