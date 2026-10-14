@@ -1,6 +1,7 @@
 // "Печать заказа" on the Order page: a clean one-page order sheet — no
 // sidebar, buttons or dashboard chrome — printed from a hidden iframe, so
 // it needs no popup permission and leaves the page itself untouched.
+import { byCatalog } from './catalogOrder'
 import type { OrderLineItem } from './data'
 import { formatMoney, orderLabel } from './format'
 import type { CustomerRow, OrderRow } from './types'
@@ -23,14 +24,18 @@ function formatQty(qty: number): string {
 export function orderSheetHtml(order: OrderRow, customer: CustomerRow | undefined, lines: OrderLineItem[], unitLabel: (u: string) => string): string {
   const net = lines.reduce((sum, l) => sum + l.qty * l.unitPrice, 0) + order.deliveryFee
   const vat = vatOf(net)
+  // The company the order is for (a staff member's order counts under their
+  // company), and who actually placed it when that's someone else.
+  const placedBy = [order.customer, customer?.staffRole].filter((v) => v && v !== '—').join(', ')
   const info: [string, string][] = [
-    ['Клиент', customer?.companyName || order.customer],
+    ['Компания', order.companyName],
+    ['Заказал', order.customer !== order.companyName ? placedBy : ''],
     ['Контакт', [customer?.contact !== '—' ? customer?.contact : '', customer?.phone].filter(Boolean).join(', ')],
     ['Адрес доставки', order.deliveryAddress ?? ''],
     ['Время доставки', order.deliverySlot ?? ''],
     ['Оплата', PAYMENT_METHOD_LABEL[order.paymentMethod ?? ''] ?? ''],
   ]
-  const rows = lines
+  const rows = byCatalog(lines, (l) => l.category, (l) => l.name)
     .map(
       (l, i) => `<tr>
         <td>${i + 1}</td>
@@ -59,10 +64,15 @@ export function orderSheetHtml(order: OrderRow, customer: CustomerRow | undefine
   .totals { margin-top: 12px; margin-left: auto; border-collapse: collapse; }
   .totals td { padding: 3px 0 3px 24px; text-align: right; }
   .totals tr:last-child td { font-weight: 700; font-size: 13pt; border-top: 1px solid #999; padding-top: 6px; }
+  .company { font-size: 14pt; font-weight: 600; margin: 0 0 4px; }
+  .signs { display: flex; gap: 48px; margin-top: 56px; break-inside: avoid; }
+  .sign { flex: 1; }
+  .sign-line { border-bottom: 1px solid #111; height: 28px; }
+  .sign-label { color: #555; font-size: 9pt; margin-top: 4px; }
 </style></head>
 <body>
   <h1>Заказ №${order.orderNumber}</h1>
-  <div class="muted">${esc(order.companyName)}</div>
+  <div class="company">${esc(order.companyName)}</div>
   <div class="muted">Оформлен ${esc(new Date(order.createdAt).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' }))}</div>
   <table class="info">${info
     .filter(([, v]) => v)
@@ -78,6 +88,10 @@ export function orderSheetHtml(order: OrderRow, customer: CustomerRow | undefine
     <tr><td>НДС 12%</td><td>${esc(formatMoney(vat))}</td></tr>
     <tr><td>Итого с НДС</td><td>${esc(formatMoney(net + vat))}</td></tr>
   </table>
+  <div class="signs">
+    <div class="sign"><div>Сдал (Freshline)</div><div class="sign-line"></div><div class="sign-label">подпись / ФИО</div></div>
+    <div class="sign"><div>Принял (${esc(order.companyName)})</div><div class="sign-line"></div><div class="sign-label">подпись / ФИО</div></div>
+  </div>
 </body></html>`
 }
 

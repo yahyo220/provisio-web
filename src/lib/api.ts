@@ -226,7 +226,9 @@ export async function fetchAll(): Promise<FetchedData> {
   const orderItems: OrderItemRow[] = itemRows.map((item) => ({
     orderId: item.order_id,
     productId: item.product_id,
-    name: item.name ?? '',
+    // The app saves the line in the shopper's app language (Uzbek, English…);
+    // documents and pages here always use the catalog's Russian name.
+    name: (item.product_id && productNameById.get(item.product_id)) || item.name || '',
     unit: item.unit ?? '',
     qty: Number(item.qty),
     unitPrice: Number(item.unit_price),
@@ -559,13 +561,14 @@ export async function fetchOrderItems(orderId: string): Promise<OrderLineItem[]>
   const db = assertClient()
   const { data, error } = await db
     .from('order_items')
-    .select('*, products(category)')
+    .select('*, products(category, name)')
     .eq('order_id', orderId)
     .order('id', { ascending: true })
   if (error) throw error
   return (data ?? []).map((row) => ({
     id: row.id,
-    name: row.name,
+    // Russian catalog name, not the shopper's app language — see fetchAll.
+    name: (row.products as { name?: string } | null)?.name || row.name,
     sku: row.sku ?? '',
     qty: row.qty,
     unit: row.unit,

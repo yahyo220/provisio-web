@@ -1,9 +1,10 @@
 // Freshline — order → Excel export, matching the business's own накладная
 // merge-template exactly (Номер накладной / Организация (нашa) / Организация
 // (клиента) / Дата заявки / Должность / Контрагент / Телефон, then a
-// №-Название-Категория-Ед.изм.-Кол-во table — deliberately no price/sum
-// column, this template never had one).
+// №-Название-Ед.изм.-Кол-во table in catalog order — deliberately no
+// price/sum column, this template never had one — and signature lines.
 import ExcelJS from 'exceljs'
+import { byCatalog } from './catalogOrder'
 import type { CustomerRow, OrderRow } from './types'
 import type { OrderLineItem } from './data'
 import { MEDIUM_BORDER, triggerXlsxDownload } from './xlsxShared'
@@ -16,7 +17,7 @@ export async function downloadOrderExcel(
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Накладная')
 
-  ws.columns = [{ width: 7.14 }, { width: 34.29 }, { width: 18.14 }, {}, { width: 11.43 }]
+  ws.columns = [{ width: 7.14 }, { width: 34.29 }, { width: 11.43 }, { width: 11.43 }]
 
   const orderDate = new Date(order.createdAt)
   const dateLabel = Number.isNaN(orderDate.getTime())
@@ -35,19 +36,18 @@ export async function downloadOrderExcel(
   // info, bold — same distinction the source template makes.
   addLabelRow(1, `Номер накладной: ${order.orderNumber}`, false)
   addLabelRow(2, `Организация: Freshline`, false)
-  addLabelRow(3, `Организация: ${customer?.companyName || '—'}`, true)
+  addLabelRow(3, `Организация: ${order.companyName}`, true)
   addLabelRow(4, `Дата заявки: ${dateLabel}`, true)
   addLabelRow(5, `Должность: ${customer?.staffRole || '—'}`, true)
   addLabelRow(6, `Контрагент: ${customer?.contact || customer?.name || order.customer}`, true)
   addLabelRow(7, `Телефон: ${customer?.phone || '—'}`, true)
 
-  // Header row — only №/Название/Кол-во are labeled in the source template;
-  // the Категория/Ед. изм. header cells are left blank there too.
   const headerRow = 8
   const headers: [number, string][] = [
     [1, '№'],
     [2, 'Название'],
-    [5, 'Кол-во'],
+    [3, 'Ед. изм.'],
+    [4, 'Кол-во'],
   ]
   for (const [col, text] of headers) {
     const cell = ws.getCell(headerRow, col)
@@ -55,31 +55,45 @@ export async function downloadOrderExcel(
     cell.font = { name: 'sans-serif', size: 8, bold: true }
     cell.alignment = { horizontal: 'center', vertical: 'middle' }
   }
-  for (let col = 1; col <= 5; col++) {
+  for (let col = 1; col <= 4; col++) {
     const cell = ws.getCell(headerRow, col)
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD5D5D5' } }
     cell.border = MEDIUM_BORDER
   }
 
-  const aligns: Record<number, 'left' | 'right' | 'center'> = { 1: 'right', 2: 'left', 3: 'left', 4: 'left', 5: 'right' }
-  lineItems.forEach((line, i) => {
+  const aligns: Record<number, 'left' | 'right' | 'center'> = { 1: 'right', 2: 'left', 3: 'left', 4: 'right' }
+  const sorted = byCatalog(lineItems, (l) => l.category, (l) => l.name)
+  sorted.forEach((line, i) => {
     const r = headerRow + 1 + i
     const values: Record<number, string | number> = {
       1: i + 1,
       2: line.name,
-      3: line.category,
-      4: line.unit,
-      5: line.qty,
+      3: line.unit,
+      4: line.qty,
     }
-    for (let col = 1; col <= 5; col++) {
+    for (let col = 1; col <= 4; col++) {
       const cell = ws.getCell(r, col)
       cell.value = values[col]
       cell.font = { name: 'sans-serif', size: 8 }
       cell.alignment = { horizontal: aligns[col], vertical: 'top' }
       cell.border = MEDIUM_BORDER
-      if (col === 1 || col === 5) cell.numFmt = '#,##0'
+      if (col === 1) cell.numFmt = '#,##0'
+      if (col === 4) cell.numFmt = '#,##0.###'
     }
   })
+
+  // Signature lines under the table.
+  const signRow = headerRow + sorted.length + 3
+  const sign = (row: number, label: string) => {
+    ws.getCell(row, 1).value = label
+    ws.getCell(row, 1).font = { name: 'Calibri', size: 11 }
+    ws.mergeCells(row, 2, row, 4)
+    ws.getCell(row, 2).border = { bottom: { style: 'thin' } }
+    ws.getCell(row + 1, 2).value = 'подпись / ФИО'
+    ws.getCell(row + 1, 2).font = { name: 'Calibri', size: 8, color: { argb: 'FF777777' } }
+  }
+  sign(signRow, 'Сдал:')
+  sign(signRow + 3, 'Принял:')
 
   await triggerXlsxDownload(wb, `Накладная №${order.orderNumber}.xlsx`)
 }

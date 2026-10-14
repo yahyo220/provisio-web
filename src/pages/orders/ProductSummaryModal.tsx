@@ -6,7 +6,7 @@ import { useLanguage } from '../../i18n/LanguageContext'
 import { downloadProductSummaryExcel, formatSummaryQty, printProductSummary, summarizeItems } from '../../lib/productSummary'
 import { orderLabel } from '../../lib/format'
 import type { OrderStatus } from '../../lib/types'
-import { addDays, formatDay, toDateIso, todayIso } from '../../lib/warehouse'
+import { addDays, createDemoWarehouse, formatDay, formatQty, stockOf, toDateIso, todayIso } from '../../lib/warehouse'
 import { useData } from '../../store/DataContext'
 import { DateInput } from '../warehouse/shared'
 
@@ -27,7 +27,7 @@ const MODE_LABELS: Record<Mode, string> = {
  * added up — what still has to go out, or what already went. No per-customer
  * breakdown; print it or download it. */
 export default function ProductSummaryModal({ onClose }: { onClose: () => void }) {
-  const { orders, orderItems } = useData()
+  const { orders, orderItems, products } = useData()
   const { unit } = useLanguage()
   const [from, setFrom] = useState(todayIso())
   const [to, setTo] = useState(todayIso())
@@ -44,10 +44,25 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }, [orders, mode, from, to])
 
+  // Current stock, from the same (demo, for now) warehouse the Склад page shows.
+  const warehouse = useMemo(() => {
+    const active = products.filter((p) => p.active)
+    return createDemoWarehouse(active, orders.map((o) => o.orderNumber).slice(0, 40))
+  }, [products, orders])
+
   const rows = useMemo(() => {
     const ids = new Set(chosen.map((o) => o.id))
-    return summarizeItems(orderItems.filter((i) => ids.has(i.orderId)))
-  }, [chosen, orderItems])
+    const categoryById = new Map(products.map((p) => [p.id, p.category]))
+    const stockText = (productId: string) => {
+      const settings = warehouse.settings[productId]
+      return settings ? `${formatQty(stockOf(warehouse, productId))} ${unit(settings.baseUnit)}` : undefined
+    }
+    return summarizeItems(
+      orderItems.filter((i) => ids.has(i.orderId)),
+      (id) => categoryById.get(id),
+      stockText,
+    )
+  }, [chosen, orderItems, products, warehouse, unit])
 
   const period = from === to ? formatDay(from) : `${formatDay(from)} – ${formatDay(to)}`
   const title = `Товары по заказам — ${MODE_LABELS[mode].toLowerCase()}`
@@ -135,12 +150,12 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
                 <th>№</th>
                 <th>Товар</th>
                 <th style={{ textAlign: 'right' }}>Количество</th>
-                <th style={{ textAlign: 'right' }}>В заказах</th>
+                <th style={{ textAlign: 'right' }}>На складе</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={`${r.name}|${r.unit}`}>
+                <tr key={`${r.productId ?? r.name}|${r.unit}`}>
                   <td className="unit-muted">{i + 1}</td>
                   <td style={{ fontWeight: 600 }}>{r.name}</td>
                   <td style={{ textAlign: 'right' }}>
@@ -149,8 +164,8 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
                       <span className="unit">{unit(r.unit)}</span>
                     </span>
                   </td>
-                  <td style={{ textAlign: 'right' }} className="unit-muted">
-                    {r.orders}
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className="unit-muted">
+                    {r.stock}
                   </td>
                 </tr>
               ))}

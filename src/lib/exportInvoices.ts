@@ -16,6 +16,7 @@
 // bracket-matching, the totalPrefix/orderNoPrefix extraction below) rather
 // than hand-transcribing them, so the next revision needs fewer code changes.
 import ExcelJS from 'exceljs'
+import { byCatalog } from './catalogOrder'
 import type { CustomerRow, OrderItemRow, OrderRow } from './types'
 import type { OrderLineItem } from './data'
 import { triggerXlsxDownload } from './xlsxShared'
@@ -160,6 +161,7 @@ export async function downloadOrderExcelWithPrice(
   customer: CustomerRow | undefined,
   lineItems: OrderLineItem[],
 ) {
+  const lines = byCatalog(lineItems, (l) => l.category, (l) => l.name)
   const wb = await loadOrderPriceTemplate()
   const ws = wb.worksheets[0]
 
@@ -171,7 +173,7 @@ export async function downloadOrderExcelWithPrice(
   // "delivery number" this business tracks, and this накладная is per order.
   fillToken(ws, 2, 1, String(order.orderNumber))
   fillToken(ws, 3, 1, 'Freshline')
-  fillToken(ws, 4, 1, customer?.companyName || customer?.name || order.customer)
+  fillToken(ws, 4, 1, order.companyName)
   fillToken(ws, 5, 1, formatDate(order.createdAt))
   fillToken(ws, 6, 1, customer?.staffRole || '—')
   fillToken(ws, 7, 1, customer?.contact || customer?.name || order.customer)
@@ -202,7 +204,7 @@ export async function downloadOrderExcelWithPrice(
   }
 
   let grandTotal = 0
-  lineItems.forEach((line, i) => {
+  lines.forEach((line, i) => {
     const row = 10 + i
     // "Сумма без НДС" (pre-tax), "НДС" (the VAT on it), "Сумма" (the two
     // added together — this line's payable total).
@@ -214,7 +216,7 @@ export async function downloadOrderExcelWithPrice(
     writeTemplateRow(ws, row, PRICE_PRODUCT_COLS, [i + 1, line.name, line.category, line.qty, sumWithoutVat, vatAmount, lineTotal], productColStyles)
   })
 
-  writeTotalRow(ws, 10 + lineItems.length, PRICE_PRODUCT_COLS, totalColStyles, [
+  writeTotalRow(ws, 10 + lines.length, PRICE_PRODUCT_COLS, totalColStyles, [
     { index: PRICE_PRODUCT_COLS.length - 1, text: `${totalPrefix}${grandTotal.toLocaleString('ru-RU')}` },
   ])
 
@@ -380,6 +382,7 @@ export async function downloadOrderExcelWithMargin(
   customer: CustomerRow | undefined,
   lineItems: OrderLineItem[],
 ) {
+  const lines = byCatalog(lineItems, (l) => l.category, (l) => l.name)
   const wb = await loadOrderMarginTemplate()
   const ws = wb.worksheets[0]
 
@@ -388,7 +391,7 @@ export async function downloadOrderExcelWithMargin(
 
   fillToken(ws, 2, 1, String(order.orderNumber))
   fillToken(ws, 3, 1, 'Freshline')
-  fillToken(ws, 4, 1, customer?.companyName || customer?.name || order.customer)
+  fillToken(ws, 4, 1, order.companyName)
   fillToken(ws, 5, 1, formatDate(order.createdAt))
   fillToken(ws, 6, 1, customer?.staffRole || '—')
   fillToken(ws, 7, 1, customer?.contact || customer?.name || order.customer)
@@ -409,7 +412,7 @@ export async function downloadOrderExcelWithMargin(
 
   let grandTotal = 0
   let grandProfit = 0
-  lineItems.forEach((line, i) => {
+  lines.forEach((line, i) => {
     const row = 10 + i
     const sumWithoutVat = Math.round(line.qty * line.unitPrice)
     const vatAmount = Math.round(sumWithoutVat * VAT_RATE)
@@ -430,7 +433,7 @@ export async function downloadOrderExcelWithMargin(
     )
   })
 
-  writeTotalRow(ws, 10 + lineItems.length, MARGIN_ORDER_COLS, totalColStyles, [
+  writeTotalRow(ws, 10 + lines.length, MARGIN_ORDER_COLS, totalColStyles, [
     { index: MARGIN_ORDER_SUM_INDEX, text: `${sumPrefix}${grandTotal.toLocaleString('ru-RU')}` },
     { index: MARGIN_ORDER_PROFIT_INDEX, text: `${profitPrefix}${grandProfit.toLocaleString('ru-RU')}` },
   ])

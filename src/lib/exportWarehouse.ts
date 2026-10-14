@@ -4,6 +4,7 @@
 // download matches what you see.
 import ExcelJS from 'exceljs'
 import { translateCategory, translateUnit } from '../i18n/translations'
+import { byCatalog } from './catalogOrder'
 import type { ProductRow } from './types'
 import {
   byExpiry,
@@ -130,7 +131,7 @@ function batchValue(batches: StockBatch[]): number {
 function stockSheet(wb: ExcelJS.Workbook, state: WarehouseState, products: ProductRow[], subtitle: string) {
   const ws = wb.addWorksheet('Остатки')
   let totalValue = 0
-  const rows = products.map((p) => {
+  const rows = byCatalog(products, (p) => p.category, (p) => p.name).map((p) => {
     const s = state.settings[p.id]
     const stock = stockOf(state, p.id)
     const value = batchValue(liveBatches(state, p.id))
@@ -181,10 +182,9 @@ export async function downloadPurchaseList(state: WarehouseState, products: Prod
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Что закупить')
   let total = 0
-  const rows = products
+  const rows = byCatalog(products, (p) => p.category, (p) => p.name)
     .map((p) => ({ p, s: state.settings[p.id], stock: stockOf(state, p.id) }))
     .filter(({ s, stock }) => s && stockState(stock, s.minStock) !== 'in')
-    .sort((a, b) => a.stock - a.s.minStock - (b.stock - b.s.minStock))
     .map(({ p, s, stock }) => {
       const need = Math.max(0, Math.round((s.minStock - stock) * 1000) / 1000)
       const last = state.batches.filter((b) => b.productId === p.id).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))[0]
@@ -472,7 +472,7 @@ export async function downloadWarehouseReport(state: WarehouseState, products: P
   const before = (iso: string) => !!from && iso.slice(0, 10) < from
 
   let totalValue = 0
-  const rows = products
+  const rows = byCatalog(products, (p) => p.category, (p) => p.name)
     .filter((p) => state.settings[p.id])
     .map((p) => {
       let opening = 0

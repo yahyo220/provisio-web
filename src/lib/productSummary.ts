@@ -3,34 +3,45 @@
 // to go out ("Нужно списать": orders not delivered yet) and for what already
 // went ("Списано": delivered orders), for whichever days are picked.
 import ExcelJS from 'exceljs'
+import { byCatalog } from './catalogOrder'
 import { esc, printHtml } from './printOrder'
 import type { OrderItemRow } from './types'
 import { THIN_BORDER, triggerXlsxDownload } from './xlsxShared'
 
 export interface SummaryRow {
+  productId: string | null
   name: string
   unit: string
   total: number
-  /** How many of the orders contain this product. */
-  orders: number
+  /** What the warehouse holds right now, e.g. "12,5 кг" — '—' when unknown. */
+  stock: string
 }
 
 /** Adds lines up per product *and* unit — "3 кг" and "2 коробки" of one
- * product stay separate rows. Lines without a product id group by name. */
-export function summarizeItems(items: OrderItemRow[]): SummaryRow[] {
-  const rows = new Map<string, { name: string; unit: string; total: number; orders: Set<string> }>()
+ * product stay separate rows. Lines without a product id group by name.
+ * Rows come out in catalog order (lib/catalogOrder.ts). */
+export function summarizeItems(
+  items: OrderItemRow[],
+  categoryOf: (productId: string) => string | undefined,
+  stockOf: (productId: string) => string | undefined,
+): SummaryRow[] {
+  const rows = new Map<string, { productId: string | null; name: string; unit: string; total: number }>()
   for (const item of items) {
     if (!(item.qty > 0)) continue
     const unit = item.unit.trim()
     const key = `${item.productId ?? `name:${item.name.trim().toLowerCase()}`}|${unit}`
-    const row = rows.get(key) ?? { name: item.name, unit, total: 0, orders: new Set<string>() }
+    const row = rows.get(key) ?? { productId: item.productId, name: item.name, unit, total: 0 }
     row.total += item.qty
-    row.orders.add(item.orderId)
     rows.set(key, row)
   }
-  return [...rows.values()]
-    .map((r) => ({ name: r.name, unit: r.unit, total: Math.round(r.total * 1000) / 1000, orders: r.orders.size }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  const summed = [...rows.values()].map((r) => ({
+    productId: r.productId,
+    name: r.name,
+    unit: r.unit,
+    total: Math.round(r.total * 1000) / 1000,
+    stock: (r.productId && stockOf(r.productId)) || '—',
+  }))
+  return byCatalog(summed, (r) => (r.productId ? categoryOf(r.productId) : undefined), (r) => r.name)
 }
 
 export function formatSummaryQty(n: number): string {
@@ -50,15 +61,19 @@ export function printProductSummary(title: string, subtitle: string, rows: Summa
   th { background: #eee; font-size: 10pt; }
   .num { text-align: right; white-space: nowrap; font-weight: 600; }
   .check { width: 18px; text-align: center; }
+  .stock { font-weight: 400; color: #444; }
   .foot { margin-top: 12px; font-size: 9pt; color: #666; }
 </style></head>
 <body>
   <h1>${esc(title)}</h1>
   <div class="sub">${esc(subtitle)}</div>
   <table>
-    <thead><tr><th class="check"></th><th>№</th><th>Товар</th><th>Ед.</th><th class="num">Количество</th></tr></thead>
+    <thead><tr><th class="check"></th><th>№</th><th>Товар</th><th>Ед.</th><th class="num">Количество</th><th class="num stock">На складе</th></tr></thead>
     <tbody>${rows
-      .map((r, i) => `<tr><td class="check">☐</td><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(unitLabel(r.unit))}</td><td class="num">${esc(formatSummaryQty(r.total))}</td></tr>`)
+      .map(
+        (r, i) =>
+          `<tr><td class="check">☐</td><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(unitLabel(r.unit))}</td><td class="num">${esc(formatSummaryQty(r.total))}</td><td class="num stock">${esc(r.stock)}</td></tr>`,
+      )
       .join('')}</tbody>
   </table>
   <div class="foot">Позиций: ${rows.length}. Напечатано ${esc(new Date().toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }))}.</div>
@@ -68,14 +83,14 @@ export function printProductSummary(title: string, subtitle: string, rows: Summa
 export async function downloadProductSummaryExcel(title: string, subtitle: string, rows: SummaryRow[], unitLabel: (u: string) => string, filename: string) {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Товары')
-  ws.columns = [{ width: 6 }, { width: 40 }, { width: 10 }, { width: 14 }, { width: 14 }]
+  ws.columns = [{ width: 6 }, { width: 40 }, { width: 10 }, { width: 14 }, { width: 16 }]
   ws.getCell(1, 1).value = title
   ws.getCell(1, 1).font = { bold: true, size: 14 }
   ws.mergeCells(1, 1, 1, 5)
   ws.getCell(2, 1).value = subtitle
   ws.getCell(2, 1).font = { size: 10, color: { argb: 'FF55523F' } }
   ws.mergeCells(2, 1, 2, 5)
-  const headers = ['№', 'Товар', 'Ед.', 'Количество', 'В заказах']
+  const headers = ['№', 'Товар', 'Ед.', 'Количество', 'На складе']
   headers.forEach((h, i) => {
     const cell = ws.getCell(4, i + 1)
     cell.value = h
@@ -85,7 +100,7 @@ export async function downloadProductSummaryExcel(title: string, subtitle: strin
     cell.border = THIN_BORDER
   })
   rows.forEach((r, i) => {
-    const values: (string | number)[] = [i + 1, r.name, unitLabel(r.unit), r.total, r.orders]
+    const values: (string | number)[] = [i + 1, r.name, unitLabel(r.unit), r.total, r.stock]
     values.forEach((v, c) => {
       const cell = ws.getCell(5 + i, c + 1)
       cell.value = v
