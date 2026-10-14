@@ -214,7 +214,7 @@ async function handleCommand(msg: TgMessage, text: string) {
     if (!customer || customer.length !== 1) {
       return reply(msg.chat.id, msg.message_id, `Не нашёл клиента «${esc(login)}». Нужен логин из приложения (как на сайте в карточке клиента).`)
     }
-    const { error } = await admin.from('telegram_chats').upsert({ chat_id: msg.chat.id, customer_id: customer[0].id, title: msg.chat.title ?? null })
+    const { error } = await admin.from('telegram_chats').upsert({ chat_id: msg.chat.id, customer_id: customer[0].id, title: msg.chat.title ?? null, linked_at: new Date().toISOString() })
     if (error) {
       console.error(error)
       return reply(msg.chat.id, msg.message_id, 'Не получилось привязать группу, попробуйте ещё раз.')
