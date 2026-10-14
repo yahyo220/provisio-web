@@ -128,24 +128,29 @@ export interface OrderLine {
   price: number
 }
 
+/** The website's "Печать заказа" sheet (src/lib/printOrder.ts), field for field. */
 export async function orderPdf(o: {
   number: number
   company: string
   placedBy: string
+  contact: string
   createdAt: string
   address: string
   slot: string
   payment: string
+  deliveryFee: number
   lines: OrderLine[]
 }): Promise<Uint8Array> {
   const { doc, sheet } = await start()
-  const net = o.lines.reduce((s, l) => s + l.qty * l.price, 0)
+  const net = o.lines.reduce((s, l) => s + l.qty * l.price, 0) + o.deliveryFee
   const vat = Math.round(net * 0.12)
   sheet.text(`Заказ №${o.number}`, 18, { bold: true, gap: 4 })
   sheet.text(o.company, 13, { bold: true, gap: 4 })
   sheet.text(`Оформлен ${new Date(o.createdAt).toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', dateStyle: 'long', timeStyle: 'short' })}`, 9, { color: 0.35, gap: 10 })
   for (const [k, v] of [
-    ['Заказал', o.placedBy !== o.company ? o.placedBy : ''],
+    ['Компания', o.company],
+    ['Заказал', o.placedBy && !o.placedBy.startsWith(o.company) ? o.placedBy : ''],
+    ['Контакт', o.contact],
     ['Адрес доставки', o.address],
     ['Время доставки', o.slot],
     ['Оплата', o.payment],
@@ -164,6 +169,7 @@ export async function orderPdf(o: {
     ],
     byCatalog(o.lines).map((l, i) => [String(i + 1), l.name, qty(l.qty), l.unit, money(l.price), money(l.qty * l.price)]),
   )
+  if (o.deliveryFee > 0) sheet.text(`Доставка: ${money(o.deliveryFee)}`, 10, { gap: 3 })
   sheet.text(`Сумма без НДС: ${money(net)}`, 10, { gap: 3 })
   sheet.text(`НДС 12%: ${money(vat)}`, 10, { gap: 3 })
   sheet.text(`Итого с НДС: ${money(net + vat)}`, 12, { bold: true })
@@ -179,6 +185,7 @@ export interface SummaryRow {
   price: number | null
 }
 
+/** The website's "Товары по заказам" print (src/lib/productSummary.ts). */
 export async function summaryPdf(title: string, subtitle: string, rows: SummaryRow[]): Promise<Uint8Array> {
   const { doc, sheet } = await start()
   sheet.text(title, 16, { bold: true, gap: 4 })
@@ -194,6 +201,7 @@ export async function summaryPdf(title: string, subtitle: string, rows: SummaryR
     ],
     byCatalog(rows).map((r, i) => ['☐', String(i + 1), r.name, r.unit, qty(r.total), r.price != null ? money(r.price) : '—']),
   )
-  sheet.text(`Позиций: ${rows.length}`, 9, { color: 0.35 })
+  const printed = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', dateStyle: 'short', timeStyle: 'short' })
+  sheet.text(`Позиций: ${rows.length}. Напечатано ${printed}.`, 9, { color: 0.35 })
   return doc.save()
 }
