@@ -2853,3 +2853,16 @@ tr.row-link:hover {
   background: #d92d20;
   box-shadow: 0 0 0 2px var(--gesso-surface-elevated, #fff);
 }
+
+.wh-import {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.wh-import-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}

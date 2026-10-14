@@ -6,6 +6,8 @@ import { useLanguage } from '../../i18n/LanguageContext'
 import { formatMoney } from '../../lib/format'
 import type { ProductRow } from '../../lib/types'
 import { addDays, formatQty, parseAmount, todayIso, type NewReceiptLine, type WarehouseState } from '../../lib/warehouse'
+import type { ImportedRow } from '../../lib/warehouseImport'
+import { ImportBar } from './shared'
 
 interface DraftLine {
   key: string
@@ -60,6 +62,28 @@ export default function ReceiptModal({ state, products, initialProductId, onClos
       expiresAt: autoExpiry(productId, receivedDate),
       expiryTouched: false,
     }
+  }
+
+  /** Rows from an imported file become lines like ones added by hand; a
+   * missing price falls back to the last purchase price, a missing expiry
+   * to the product's shelf life. */
+  function addImported(rows: ImportedRow[]) {
+    const decimal = (n: number) => String(n).replace('.', ',')
+    setLines((ls) => [
+      ...ls,
+      ...rows.map((r) => {
+        const line = newLine(r.productId, date)
+        return {
+          ...line,
+          unit: r.unit ?? line.unit,
+          qtyText: decimal(r.qty),
+          priceText: r.price != null ? decimal(r.price) : line.priceText,
+          expiresAt: r.expiresAt ?? line.expiresAt,
+          expiryTouched: r.expiresAt != null,
+        }
+      }),
+    ])
+    setError(null)
   }
 
   function update(key: string, patch: Partial<DraftLine>) {
@@ -136,6 +160,8 @@ export default function ReceiptModal({ state, products, initialProductId, onClos
         </>
       }
     >
+      <ImportBar kind="receipt" state={state} products={products} onRows={addImported} />
+
       <div className="wh-form-row">
         <div className="field">
           <label htmlFor="rc-date">Дата прихода</label>
@@ -169,7 +195,7 @@ export default function ReceiptModal({ state, products, initialProductId, onClos
               <tr>
                 <td colSpan={6}>
                   <div className="empty-state" style={{ padding: 24 }}>
-                    Выберите товар ниже.
+                    Выберите товар ниже или загрузите файл Excel.
                   </div>
                 </td>
               </tr>

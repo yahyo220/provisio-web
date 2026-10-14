@@ -1,16 +1,36 @@
+import { Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { useLanguage } from '../../i18n/LanguageContext'
 import type { ProductRow } from '../../lib/types'
 import { formatDay, formatQty, liveBatches, parseAmount, MANUAL_WRITE_OFF_REASONS, stockOf, type WarehouseState, type WriteOffReason } from '../../lib/warehouse'
+import type { ImportedRow } from '../../lib/warehouseImport'
+import { ImportBar } from './shared'
+
+export interface WriteOffInput {
+  productId: string
+  batchId: string | null
+  qty: number
+  reason: WriteOffReason
+  comment: string
+}
+
+/** One row loaded from a file — several products written off at once. */
+interface BulkLine {
+  key: string
+  productId: string
+  qtyText: string
+  reason: WriteOffReason
+  comment: string
+}
 
 interface WriteOffModalProps {
   state: WarehouseState
   products: ProductRow[]
   initial?: { productId?: string; batchId?: string; reason?: WriteOffReason }
   onClose: () => void
-  onSubmit: (input: { productId: string; batchId: string | null; qty: number; reason: WriteOffReason; comment: string }) => void
+  onSubmit: (inputs: WriteOffInput[]) => void
 }
 
 export default function WriteOffModal({ state, products, initial, onClose, onSubmit }: WriteOffModalProps) {
@@ -26,6 +46,36 @@ export default function WriteOffModal({ state, products, initial, onClose, onSub
   const [reason, setReason] = useState<WriteOffReason>(initial?.reason ?? 'spoiled')
   const [comment, setComment] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [bulk, setBulk] = useState<BulkLine[]>([])
+  const productsById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
+
+  function addImported(rows: ImportedRow[]) {
+    setBulk((ls) => [
+      ...ls,
+      ...rows.map((r) => ({
+        key: `${r.productId}-${r.row}-${Math.random()}`,
+        productId: r.productId,
+        qtyText: String(r.qty).replace('.', ','),
+        reason: r.reason ?? reason,
+        comment: r.comment,
+      })),
+    ])
+    setError(null)
+  }
+
+  function submitBulk() {
+    const out: WriteOffInput[] = []
+    for (const l of bulk) {
+      const n = parseAmount(l.qtyText, 3)
+      if (n === null || n <= 0) {
+        setError(`Проверьте количество у «${productsById.get(l.productId)?.name ?? 'товар'}» — нужно число больше нуля.`)
+        return
+      }
+      // The batch that expires first goes first.
+      out.push({ productId: l.productId, batchId: liveBatches(state, l.productId)[0]?.id ?? null, qty: n, reason: l.reason, comment: l.comment || comment.trim() })
+    }
+    onSubmit(out)
+  }
 
   const product = selectable.find((p) => p.id === productId)
   const baseUnit = state.settings[productId]?.baseUnit ?? product?.unit ?? ''
@@ -47,7 +97,94 @@ export default function WriteOffModal({ state, products, initial, onClose, onSub
       setError('Укажите количество больше нуля, например 2,5.')
       return
     }
-    onSubmit({ productId, batchId: batchId || null, qty, reason, comment: comment.trim() })
+    onSubmit([{ productId, batchId: batchId || null, qty, reason, comment: comment.trim() }])
+  }
+
+  if (bulk.length > 0) {
+    return (
+      <Modal
+        title={`Списание — ${bulk.length} поз. из файла`}
+        onClose={onClose}
+        wide
+        footer={
+          <>
+            <Button variant="text" onClick={onClose}>
+              Отмена
+            </Button>
+            <Button onClick={submitBulk}>Списать всё</Button>
+          </>
+        }
+      >
+        <ImportBar kind="writeoff" state={state} products={products} onRows={addImported} />
+        <div className="table-wrap">
+          <table className="wh-lines">
+            <thead>
+              <tr>
+                <th>Товар</th>
+                <th style={{ textAlign: 'right' }}>На складе</th>
+                <th style={{ textAlign: 'right' }}>Списать</th>
+                <th>Причина</th>
+                <th aria-label="Удалить" />
+              </tr>
+            </thead>
+            <tbody>
+              {bulk.map((l) => {
+                const p = productsById.get(l.productId)
+                const base = state.settings[l.productId]?.baseUnit ?? p?.unit ?? ''
+                const n = parseAmount(l.qtyText, 3)
+                const edit = (patch: Partial<BulkLine>) => setBulk((ls) => ls.map((x) => (x.key === l.key ? { ...x, ...patch } : x)))
+                return (
+                  <tr key={l.key}>
+                    <td>
+                      <div className="prod-name">{p?.name}</div>
+                      <div className="prod-sku">{l.comment || p?.sku}</div>
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className="unit-muted">
+                      {formatQty(stockOf(state, l.productId))} {unit(base)}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="wh-qty-input">
+                        <input
+                          className="qty-input"
+                          type="text"
+                          inputMode="decimal"
+                          value={l.qtyText}
+                          onChange={(e) => edit({ qtyText: e.target.value })}
+                          style={n === null || n <= 0 ? { boxShadow: '0 0 0 2px var(--gesso-danger)' } : undefined}
+                          aria-label={`Количество: ${p?.name}`}
+                        />
+                        <span className="unit-muted">{unit(base)}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="select-wrap">
+                        <select value={l.reason} onChange={(e) => edit({ reason: e.target.value as WriteOffReason })} aria-label={`Причина: ${p?.name}`}>
+                          {MANUAL_WRITE_OFF_REASONS.map((r) => (
+                            <option key={r.value} value={r.value}>
+                              {r.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </td>
+                    <td>
+                      <button type="button" className="action-btn" aria-label={`Убрать ${p?.name}`} onClick={() => setBulk((ls) => ls.filter((x) => x.key !== l.key))}>
+                        <Trash2 />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="field" style={{ marginTop: 16 }}>
+          <label htmlFor="wo-bulk-comment">Комментарий (для строк без своего)</label>
+          <input id="wo-bulk-comment" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Например, инвентаризация 14.10" />
+        </div>
+        {error && <div className="wh-error">{error}</div>}
+      </Modal>
+    )
   }
 
   return (
@@ -63,6 +200,8 @@ export default function WriteOffModal({ state, products, initial, onClose, onSub
         </>
       }
     >
+      <ImportBar kind="writeoff" state={state} products={products} onRows={addImported} />
+
       <div className="field">
         <label htmlFor="wo-product">Товар</label>
         <div className="select-wrap">

@@ -165,10 +165,10 @@ export default function Warehouse() {
           products={activeProducts}
           initial={dialog}
           onClose={() => setDialog(null)}
-          onSubmit={(input) => {
-            setEdited(postWriteOff(state, input))
+          onSubmit={(inputs) => {
+            setEdited(inputs.reduce((s, input) => postWriteOff(s, input), state))
             setDialog(null)
-            setNotice(`Списано: ${productsById.get(input.productId)?.name ?? 'товар'}.`)
+            setNotice(inputs.length === 1 ? `Списано: ${productsById.get(inputs[0].productId)?.name ?? 'товар'}.` : `Списано позиций: ${inputs.length}.`)
           }}
         />
       )}
