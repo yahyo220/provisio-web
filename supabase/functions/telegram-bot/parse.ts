@@ -104,7 +104,7 @@ const STOP = new Set([
   'svezhie', 'svezhye', 'svezhiy', 'svejiy', 'svezhyy', 'svezhyh', 'otbor', 'otbornyy', 'otborniy', 'otborny', 'mestnyy', 'mestniy', 'mest', 'krupnyy',
   'bolshoy', 'bolshie', 'samyy', 'yaxshisi', 'yaxshi', 'yaxsisidan', 'yaxsisi', 'kattasi', 'katta', 'kattaroq', 'iltimos', 'orzu', 'zuridan', 'eron', 'barga',
   'non', 'personal', 'saralangan', 'va', 'dan', 'i', 's', 'dlya', 'iz', 'kottasidan', 'kottasi', 'zhrtalab', 'kelsin', 'odiysi', 'figurasi', 'paket', 'paketda',
-  'svezhyye', 'svejie', 'ilk', 'shtuk', 'shtuki', 'shtuka', 'chupsiz', 'butuni', 'mayda', 'maydasi',
+  'svezhyye', 'svejie', 'ilk', 'oddiy', 'odiy', 'obychnyy', 'mavsumiy', 'sezonnyy', 'shtuk', 'shtuki', 'shtuka', 'chupsiz', 'butuni', 'mayda', 'maydasi',
 ])
 
 /** Extra names clients use for a product, keyed by its catalog name. */
@@ -115,6 +115,8 @@ const EXTRA_NAMES: Record<string, string[]> = {
   Мороженое: ['мороженое пломбир'],
   'Молоко сугуш': ['молоко'],
   'Помидор черри красный': ['черри', 'помидор черри'],
+  Айсберг: ['салат барги', 'салат айсберг'],
+  'Капуста белокочанная': ['капуста', 'капуста белая'],
 }
 
 const UNIT_WORDS = new Set(['ml', 'sm', 'litrlik', 'grlik', 'kgdan', 'grdan', 'tadan', 'gramm', 'kilogramm'])
@@ -213,11 +215,23 @@ function quantity(line: string): { qty: number; unit: string | null; rest: strin
   const re = /(\d+(?:[.,]\d+)?)\s*([a-z.]+)?/g
   let best: { qty: number; unit: string | null; index: number; length: number } | null = null
   for (let m = re.exec(l); m; m = re.exec(l)) {
-    const unit = m[2] ? unitOf(m[2].replace(/\.$/, '')) : null
+    let unit = m[2] ? unitOf(m[2].replace(/\.$/, '')) : null
+    let index = m.index
+    let length = m[0].length
+    // "pochka 60", "KG 20" — the unit written before the number.
+    if (!unit) {
+      const before = l.slice(0, m.index).match(/([a-z.]+)\s*$/)
+      const u = before ? unitOf(before[1].replace(/\.$/, '')) : null
+      if (u && before) {
+        unit = u
+        index = m.index - before[0].length
+        length = m[0].length + before[0].length
+      }
+    }
     const qty = Number(m[1].replace(',', '.'))
     if (!Number.isFinite(qty) || qty <= 0) continue
     // "11%", "20 sm", "0.5" in a product name ("Bonaqua 0.5") lose to a number with a unit.
-    if (!best || rank(unit) >= rank(best.unit)) best = { qty, unit, index: m.index, length: m[0].length }
+    if (!best || rank(unit) >= rank(best.unit)) best = { qty, unit, index, length }
   }
   if (!best) return null
   return { qty: best.qty, unit: best.unit, rest: l.slice(0, best.index) + ' ' + l.slice(best.index + best.length) }
