@@ -246,7 +246,8 @@ async function handleOrder(msg: TgMessage, text: string) {
   }
 
   const unknown = lines.filter((l) => !l.product && l.qty)
-  const noQty = lines.filter((l) => l.product && !l.qty)
+  // Only a clear product name without a number — not section headings like "🌾 Un mahsulotlari".
+  const noQty = lines.filter((l) => l.product && !l.qty && l.score >= 0.9 && !/^\P{L}/u.test(l.text))
   const notes = [
     unknown.length ? `Telegram, не распознано: ${unknown.map((l) => l.text).join('; ')}` : '',
     noQty.length ? `Telegram, без количества: ${noQty.map((l) => l.text).join('; ')}` : '',
