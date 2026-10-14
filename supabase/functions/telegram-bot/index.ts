@@ -22,7 +22,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { parseOrderText, prepareCatalog, type CatalogProduct } from './parse.ts'
-import { money, orderPdf, summaryPdf, type SummaryRow } from './pdf.ts'
+import { orderPdf, summaryPdf, type SummaryRow } from './pdf.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -118,9 +118,8 @@ async function sendOrderDocument(orderId: string) {
     payment: PAYMENT_RU[o.payment_method ?? ''] ?? '',
     lines,
   })
-  const total = lines.reduce((s, l) => s + l.qty * l.price, 0)
   const via = o.source === 'telegram' ? 'Telegram' : 'приложение'
-  await sendPdf(DOCS_CHAT_ID, pdf, `Заказ ${companyName} №${number}.pdf`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз., ${money(total)} без НДС`)
+  await sendPdf(DOCS_CHAT_ID, pdf, `Заказ ${companyName} №${number}.pdf`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз.`)
 }
 
 /** 03:00 Tashkent: each order placed since 17:00 the evening before — its
@@ -169,6 +168,30 @@ async function sendNightBatch() {
   const day = end.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
   const pdf = await summaryPdf('Товары по заказам — нужно списать', `${period} · заказов: ${orders.length} (${list})`, [...rows.values()])
   await sendPdf(DOCS_CHAT_ID, pdf, `Товары по заказам ${day}.pdf`, `Товары по заказам, ${period}: ${rows.size} поз. из ${orders.length} заказов`)
+}
+
+/** A labelled example of both documents, built from real catalog products —
+ * so the recipient can see what will arrive at 03:00. */
+async function sendSample() {
+  if (!DOCS_CHAT_ID) return
+  const { data: products } = await admin.from('products').select('name, category, unit').eq('active', true).in('category', ['Fruits', 'Vegetables', 'Herbs', 'Dairy']).limit(40)
+  const pick = (products ?? []).filter((_, i) => i % 5 === 0).slice(0, 7)
+  const lines = pick.map((p, i) => ({ name: p.name.trim(), category: p.category, qty: [10, 2, 5, 1.5, 3, 4, 2][i] ?? 1, unit: UNIT_RU[p.unit] ?? p.unit, price: 0 }))
+  const pdf = await orderPdf({
+    number: 1,
+    company: 'ПРИМЕР — Компания',
+    placedBy: 'Повар',
+    contact: '+998 90 000 00 00',
+    createdAt: new Date().toISOString(),
+    address: 'ул. Примерная, 1',
+    slot: 'Как можно скорее',
+    payment: 'Перечисление',
+    deliveryFee: 0,
+    lines,
+  })
+  await sendPdf(DOCS_CHAT_ID, pdf, 'ПРИМЕР накладной.pdf', 'Пример: так будет выглядеть накладная каждого заказа (17:00–03:00).')
+  const summary = await summaryPdf('Товары по заказам — нужно списать', 'ПРИМЕР · заказов: 1 (ПРИМЕР — Компания №1)', lines.map((l) => ({ ...l, total: l.qty, price: null })))
+  await sendPdf(DOCS_CHAT_ID, summary, 'ПРИМЕР товары по заказам.pdf', 'Пример: общий список, придёт в 03:00 вместе с накладными.')
 }
 
 function formatQty(n: number) {
@@ -296,8 +319,15 @@ Deno.serve(async (req) => {
     if (dbSecret) {
       if (!DB_SECRET || dbSecret !== DB_SECRET) return json({ error: 'Unauthorized' }, 401)
       const body = await req.json()
-      if (body.kind === 'daily') await sendNightBatch()
-      return json({ ok: true })
+      // Answer the database right away; building and sending the PDFs keeps
+      // running in the background (pg_net gives up waiting after seconds).
+      const work = body.kind === 'daily' ? sendNightBatch() : body.kind === 'sample' ? sendSample() : Promise.resolve()
+      const done = work.catch((err) => console.error(body.kind, err))
+      // deno-lint-ignore no-explicit-any
+      const runtime = (globalThis as any).EdgeRuntime
+      if (runtime?.waitUntil) runtime.waitUntil(done)
+      else await done
+      return json({ ok: true }, 202)
     }
 
     if (req.headers.get('x-telegram-bot-api-secret-token') !== WEBHOOK_SECRET) {

@@ -142,8 +142,6 @@ export async function orderPdf(o: {
   lines: OrderLine[]
 }): Promise<Uint8Array> {
   const { doc, sheet } = await start()
-  const net = o.lines.reduce((s, l) => s + l.qty * l.price, 0) + o.deliveryFee
-  const vat = Math.round(net * 0.12)
   sheet.text(`Заказ №${o.number}`, 18, { bold: true, gap: 4 })
   sheet.text(o.company, 13, { bold: true, gap: 4 })
   sheet.text(`Оформлен ${new Date(o.createdAt).toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', dateStyle: 'long', timeStyle: 'short' })}`, 9, { color: 0.35, gap: 10 })
@@ -158,21 +156,17 @@ export async function orderPdf(o: {
     if (v) sheet.text(`${k}: ${v}`, 10, { gap: 4 })
   }
   sheet.y -= 8
+  // No prices on the documents the bot sends — the warehouse only needs what and how much.
   sheet.table(
     [
-      { title: '№', width: 28 },
-      { title: 'Товар', width: 215 },
-      { title: 'Кол-во', width: 58, align: 'right' },
-      { title: 'Ед.', width: 50 },
-      { title: 'Цена', width: 82, align: 'right' },
-      { title: 'Сумма', width: 82, align: 'right' },
+      { title: '№', width: 32 },
+      { title: 'Товар', width: 323 },
+      { title: 'Кол-во', width: 85, align: 'right' },
+      { title: 'Ед.', width: 75 },
     ],
-    byCatalog(o.lines).map((l, i) => [String(i + 1), l.name, qty(l.qty), l.unit, money(l.price), money(l.qty * l.price)]),
+    byCatalog(o.lines).map((l, i) => [String(i + 1), l.name, qty(l.qty), l.unit]),
   )
-  if (o.deliveryFee > 0) sheet.text(`Доставка: ${money(o.deliveryFee)}`, 10, { gap: 3 })
-  sheet.text(`Сумма без НДС: ${money(net)}`, 10, { gap: 3 })
-  sheet.text(`НДС 12%: ${money(vat)}`, 10, { gap: 3 })
-  sheet.text(`Итого с НДС: ${money(net + vat)}`, 12, { bold: true })
+  sheet.text(`Позиций: ${o.lines.length}`, 10)
   sheet.signatures('Сдал (Freshline)', `Принял (${o.company})`)
   return doc.save()
 }
@@ -193,13 +187,12 @@ export async function summaryPdf(title: string, subtitle: string, rows: SummaryR
   sheet.table(
     [
       { title: '', width: 22 },
-      { title: '№', width: 28 },
-      { title: 'Товар', width: 245 },
-      { title: 'Ед.', width: 60 },
-      { title: 'Количество', width: 80, align: 'right' },
-      { title: 'Цена', width: 80, align: 'right' },
+      { title: '№', width: 30 },
+      { title: 'Товар', width: 303 },
+      { title: 'Ед.', width: 70 },
+      { title: 'Количество', width: 90, align: 'right' },
     ],
-    byCatalog(rows).map((r, i) => ['☐', String(i + 1), r.name, r.unit, qty(r.total), r.price != null ? money(r.price) : '—']),
+    byCatalog(rows).map((r, i) => ['☐', String(i + 1), r.name, r.unit, qty(r.total)]),
   )
   const printed = new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', dateStyle: 'short', timeStyle: 'short' })
   sheet.text(`Позиций: ${rows.length}. Напечатано ${printed}.`, 9, { color: 0.35 })
