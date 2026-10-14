@@ -247,6 +247,13 @@ interface TgCallback {
 
 async function handleCallback(cb: TgCallback) {
   const answer = (text: string) => telegram('answerCallbackQuery', { callback_query_id: cb.id, text })
+  if (cb.data?.startsWith('cl:')) {
+    if (!(await isBotAdmin(cb.from.id))) return answer('Только для администратора Freshline.')
+    const [, chat, customer] = cb.data.split(':')
+    await answer('Минуту…')
+    await linkFromButton(cb, Number(chat), customer)
+    return
+  }
   if (cb.data?.startsWith('adm:')) {
     if (!ADMIN_IDS.has(String(cb.from.id))) return answer('Это может только владелец бота.')
     const id = cb.data.slice(4)
@@ -362,24 +369,37 @@ async function handleCommand(msg: TgMessage, text: string) {
   }
 }
 
-async function handleOrder(msg: TgMessage, text: string) {
+async function loadCatalog() {
   const { data: products, error } = await admin
     .from('products')
     .select('id, name, name_uz_cyrl, name_uz_latn, name_en, unit, sku')
     .eq('active', true)
     .order('sku')
-  if (error || !products) {
-    console.error(error)
-    return
-  }
-  const lines = parseOrderText(text, prepareCatalog(products as CatalogProduct[]))
-  const ok = lines.filter((l) => l.product && l.qty)
-  if (ok.length === 0) return // ordinary chat
+  if (error) console.error(error)
+  return prepareCatalog((products ?? []) as CatalogProduct[])
+}
+
+async function handleOrder(msg: TgMessage, text: string) {
+  const lines = parseOrderText(text, await loadCatalog())
+  if (!lines.some((l) => l.product && l.qty)) return // ordinary chat
 
   const { data: link } = await admin.from('telegram_chats').select('customer_id').eq('chat_id', msg.chat.id).maybeSingle()
-  // A group nobody linked (someone added the bot on their own) gets no answer.
-  if (!link) return
+  if (link) return placeFromText(msg.chat.id, msg.message_id, text)
 
+  // A group nobody linked yet: keep the order and ask the admins whose group it is.
+  const { data: waiting } = await admin.from('telegram_pending').select('id').eq('chat_id', msg.chat.id).limit(1)
+  await admin.from('telegram_pending').insert({ chat_id: msg.chat.id, chat_title: msg.chat.title ?? null, message_id: msg.message_id, text })
+  if (!waiting?.length) {
+    await reply(msg.chat.id, msg.message_id, 'Спасибо! Заказ получен, скоро подтвердим.')
+    await askWhichClient(msg.chat.id, msg.chat.title ?? 'без названия')
+  }
+}
+
+/** Turns one message into an order (or a follow-up) for the group's client and answers in the group. */
+async function placeFromText(chatId: number, messageId: number, text: string) {
+  const lines = parseOrderText(text, await loadCatalog())
+  const ok = lines.filter((l) => l.product && l.qty)
+  if (ok.length === 0) return
   const unknown = lines.filter((l) => !l.product && l.qty)
   // Only a clear product name without a number — not section headings like "🌾 Un mahsulotlari".
   const noQty = lines.filter((l) => l.product && !l.qty && l.score >= 0.9 && !/^\P{L}/u.test(l.text))
@@ -391,7 +411,7 @@ async function handleOrder(msg: TgMessage, text: string) {
     .join('\n')
 
   const { data: placed, error: placeError } = await admin.rpc('telegram_place_order', {
-    p_chat_id: msg.chat.id,
+    p_chat_id: chatId,
     p_items: ok.map((l) => ({ product_id: l.product!.id, qty: l.qty, unit: l.unit })),
     p_notes: notes,
   })
@@ -400,7 +420,8 @@ async function handleOrder(msg: TgMessage, text: string) {
     const why = /payment is not enabled|not enabled/.test(placeError?.message ?? '')
       ? 'у клиента не включён способ оплаты'
       : 'ошибка на сервере'
-    return reply(msg.chat.id, msg.message_id, `Не удалось оформить заказ (${why}). Мы уже видим это и свяжемся с вами.`)
+    await reply(chatId, messageId, `Не удалось оформить заказ (${why}). Мы уже видим это и свяжемся с вами.`)
+    return null
   }
 
   const head = placed.merged ? `➕ Добавлено в заказ №${placed.number}:` : `✅ Заказ №${placed.number} принят:`
@@ -409,7 +430,63 @@ async function handleOrder(msg: TgMessage, text: string) {
     unknown.length ? `\n⚠️ Не понял, уточните, пожалуйста:\n${unknown.map((l) => `• ${esc(l.text)}`).join('\n')}` : '',
     noQty.length ? `\n❓ Не указано количество:\n${noQty.map((l) => `• ${esc(l.text)}`).join('\n')}` : '',
   ].join('')
-  await reply(msg.chat.id, msg.message_id, `${head}\n${body}${extra}`)
+  await reply(chatId, messageId, `${head}\n${body}${extra}`)
+  return placed
+}
+
+/** Everyone who manages the bot: the owner(s) and people allowed with /admins. */
+async function adminChatIds(): Promise<string[]> {
+  const { data } = await admin.from('telegram_users').select('id').eq('is_admin', true)
+  return [...new Set([...ADMIN_IDS, ...(data ?? []).map((u) => String(u.id))])]
+}
+
+/** Private message to the admins: "New group — whose client is it?" with a button per client. */
+async function askWhichClient(chatId: number, title: string) {
+  const { data: clients } = await admin
+    .from('customers')
+    .select('id, name, company_name')
+    .is('parent_customer_id', null)
+    .neq('status', 'inactive')
+    .order('name')
+    .limit(80)
+  const label = (c: { name: string; company_name: string | null }) => (c.company_name || c.name).trim()
+  // Clients whose name appears in the group title go first.
+  const t = title.toLowerCase()
+  const list = (clients ?? []).sort((a, b) => Number(t.includes(label(b).toLowerCase())) - Number(t.includes(label(a).toLowerCase())))
+  const rows: { text: string; callback_data: string }[][] = []
+  for (let i = 0; i < list.length; i += 2) rows.push(list.slice(i, i + 2).map((c) => ({ text: label(c), callback_data: `cl:${chatId}:${c.id}` })))
+  rows.push([{ text: '🚫 Не принимать заказы из этой группы', callback_data: `cl:${chatId}:ignore` }])
+  for (const id of await adminChatIds()) {
+    await telegram('sendMessage', {
+      chat_id: id,
+      text: `Новая группа «${title}» прислала заказ. Чей это клиент? Нажмите — группа привяжется, и заказ оформится.`,
+      reply_markup: { inline_keyboard: rows },
+    })
+  }
+}
+
+/** An admin picked the client for a new group: link it and place what was waiting. */
+async function linkFromButton(cb: TgCallback, chatId: number, customerId: string) {
+  const { data: waiting } = await admin.from('telegram_pending').select('id, chat_title, message_id, text').eq('chat_id', chatId).order('id')
+  const title = waiting?.[0]?.chat_title ?? 'группа'
+  const edit = (text: string) =>
+    cb.message ? telegram('editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text }) : Promise.resolve()
+
+  if (customerId === 'ignore') {
+    await admin.from('telegram_pending').delete().eq('chat_id', chatId)
+    await telegram('leaveChat', { chat_id: chatId })
+    return edit(`Группа «${title}»: заказы не принимаются, бот вышел из группы.`)
+  }
+  const { data: client } = await admin.from('customers').select('name, company_name').eq('id', customerId).maybeSingle()
+  if (!client) return edit('Не нашёл этого клиента.')
+  const { data: already } = await admin.from('telegram_chats').select('customer_id').eq('chat_id', chatId).maybeSingle()
+  if (already) return edit(`Группа «${title}» уже привязана.`)
+
+  await admin.from('telegram_chats').upsert({ chat_id: chatId, customer_id: customerId, title, linked_at: new Date().toISOString() })
+  await admin.from('telegram_pending').delete().eq('chat_id', chatId)
+  let placed = 0
+  for (const w of waiting ?? []) if (await placeFromText(chatId, Number(w.message_id), w.text)) placed++
+  return edit(`Готово: группа «${title}» → ${client.company_name || client.name}. Оформлено заказов: ${placed}.`)
 }
 
 Deno.serve(async (req) => {
