@@ -88,7 +88,10 @@ const ALIASES: Record<string, string> = {
   miyata: 'myata', miata: 'myata', yalpiz: 'myata', rayhon: 'bazilik', raykhon: 'bazilik', rayhan: 'bazilik', bazilik: 'bazilik',
   dunganskiy: 'dunganskiy', dunganski: 'dunganskiy', dunganskiyi4: 'dunganskiy',
   trikalor: 'trikolor', triflor: 'trikolor', trikokor: 'trikolor', trikolor: 'trikolor', triaolor: 'trikolor', trieolor: 'trikolor', tpikolor: 'trikolor', trikolop: 'trikolor', trikoloor: 'trikolor', trikolorm: 'trikolor', trikolorzelenyy: 'trikolor zelenyy',
-  cheri: 'cherri', cherry: 'cherri',
+  cheri: 'cherri', cherry: 'cherri', chery: 'cherri', cherri: 'cherri', cheriy: 'cherri',
+  rukala: 'rukkolo', rukkala: 'rukkolo', rokkola: 'rukkolo', rukolla: 'rukkolo',
+  gribi: 'shampinon', griby: 'shampinon', grib: 'shampinon', qoziqorin: 'shampinon', shampinony: 'shampinon', shampinoni: 'shampinon',
+  goldrn: 'golden', gold: 'golden',
   buxonka: 'buxanka', buhanka: 'buxanka', buxanqa: 'buxanka', buxonqa: 'buxanka', buhanqa: 'buxanka',
   tostir: 'toster', tostirnyy: 'toster', grechka: 'grechka', chechivitsa: 'chechevica', chechivitse: 'chechevica', chichivitse: 'chechevica',
   mosh: 'mash', noxat: 'nut', nohut: 'nut', noxot: 'nut', nuxat: 'nut', nohat: 'nut',
@@ -111,6 +114,7 @@ const EXTRA_NAMES: Record<string, string[]> = {
   Сюзьма: ['сюзьма доброе'],
   Мороженое: ['мороженое пломбир'],
   'Молоко сугуш': ['молоко'],
+  'Помидор черри красный': ['черри', 'помидор черри'],
 }
 
 const UNIT_WORDS = new Set(['ml', 'sm', 'litrlik', 'grlik', 'kgdan', 'grdan', 'tadan', 'gramm', 'kilogramm'])
@@ -178,7 +182,7 @@ export function prepareCatalog(products: CatalogProduct[]): Prepared[] {
 
 const UNIT_PATTERNS: [RegExp, string][] = [
   [/^(kg|kilo|kilogramm?|kgdan|kq|ug|kh)$/, 'kg'],
-  [/^(gr|g|gramm?|grdan|grlik)$/, 'g'],
+  [/^(gr|g|grm|gramm?|grdan|grlik|gram)$/, 'g'],
   [/^(sht|shtuk|shtuka|shtuki|ta|dona|dane|don|donasi|sh|shch|sht\.)$/, 'шт.'],
   [/^(puch|puchok|puchka|puchkov|puchok\.|bog|bogi|boglam)$/, 'пучок'],
   [/^(l|lt|litr|litra|litrov|litrlik)$/, 'л'],
@@ -203,7 +207,9 @@ const rank = (u: string | null) => (u == null ? 0 : UNIT_RANK[u] ?? 4)
 
 /** Finds the quantity in a line: the number with the most telling unit after it (the last one on a tie). */
 function quantity(line: string): { qty: number; unit: string | null; rest: string } | null {
-  const l = latin(line).replace(/(\d)\s+[.,]\s*(\d)/g, '$1.$2')
+  // "1+1+1 kg" (one of each colour, say) → 3 kg in total.
+  const summed = line.replace(/\d+(?:[.,]\d+)?(?:\s*\+\s*\d+(?:[.,]\d+)?)+/g, (m) => ` ${m.split('+').reduce((s, n) => s + Number(n.trim().replace(',', '.')), 0)}`)
+  const l = latin(summed).replace(/(\d)\s+[.,]\s*(\d)/g, '$1.$2')
   const re = /(\d+(?:[.,]\d+)?)\s*([a-z.]+)?/g
   let best: { qty: number; unit: string | null; index: number; length: number } | null = null
   for (let m = re.exec(l); m; m = re.exec(l)) {
