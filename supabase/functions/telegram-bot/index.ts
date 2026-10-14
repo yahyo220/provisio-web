@@ -22,7 +22,7 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { parseOrderText, prepareCatalog, type CatalogProduct } from './parse.ts'
-import { orderPdf, summaryPdf, type SummaryRow } from './pdf.ts'
+import { orderXlsx, summaryXlsx, type XlsxSummaryRow } from './xlsx.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -72,23 +72,22 @@ function reply(chatId: number, messageId: number, text: string) {
 }
 
 const UNIT_RU: Record<string, string> = { kg: 'кг', piece: 'шт.', box: 'коробка', bottle: 'бутылка', package: 'упаковка', bunch: 'пучок', bag: 'мешок', pack: 'уп.', gram: 'грамм' }
-const PAYMENT_RU: Record<string, string> = { cash: 'Наличные', transfer: 'Перечисление', card: 'Карта' }
 
-async function sendPdf(chatId: string, bytes: Uint8Array, filename: string, caption: string) {
+async function sendFile(chatId: string, bytes: Uint8Array, filename: string, caption: string) {
   const form = new FormData()
   form.append('chat_id', chatId)
   form.append('caption', caption)
-  form.append('document', new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }), filename)
+  form.append('document', new Blob([new Uint8Array(bytes)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename)
   const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, { method: 'POST', body: form })
   if (!res.ok) console.error('sendDocument', res.status, await res.text())
 }
 
-/** The order's накладная as a PDF, to the documents recipient. */
+/** The order's накладная (the website's order Excel), to the documents recipient. */
 async function sendOrderDocument(orderId: string) {
   if (!DOCS_CHAT_ID) return console.error('TELEGRAM_DOCS_CHAT_ID not set — no document sent')
   const { data: o } = await admin
     .from('orders')
-    .select('id, order_number, company_order_number, created_at, delivery_address, delivery_slot, delivery_fee, payment_method, source, customer_id, company_id, order_items(name, qty, unit, unit_price, products(name, category))')
+    .select('id, order_number, company_order_number, created_at, source, customer_id, company_id, order_items(name, qty, unit, products(name, category))')
     .eq('id', orderId)
     .maybeSingle()
   if (!o) return
@@ -104,22 +103,18 @@ async function sendOrderDocument(orderId: string) {
     category: i.products?.category ?? null,
     qty: Number(i.qty),
     unit: UNIT_RU[i.unit] ?? i.unit,
-    price: Number(i.unit_price),
   }))
-  const pdf = await orderPdf({
+  const file = await orderXlsx({
     number,
     company: companyName,
-    placedBy: [person?.name, person?.staff_role].filter(Boolean).join(', '),
-    contact: [person?.contact && person.contact !== '—' ? person.contact : '', person?.phone].filter(Boolean).join(', '),
     createdAt: o.created_at,
-    deliveryFee: Number(o.delivery_fee ?? 0),
-    address: o.delivery_address ?? '',
-    slot: o.delivery_slot ?? '',
-    payment: PAYMENT_RU[o.payment_method ?? ''] ?? '',
+    staffRole: person?.staff_role ?? '',
+    contact: (person?.contact && person.contact !== '—' ? person.contact : '') || person?.name || '',
+    phone: person?.phone ?? '',
     lines,
   })
   const via = o.source === 'telegram' ? 'Telegram' : 'приложение'
-  await sendPdf(DOCS_CHAT_ID, pdf, `Заказ ${companyName} №${number}.pdf`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз.`)
+  await sendFile(DOCS_CHAT_ID, file, `Накладная ${companyName} №${number}.xlsx`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз.`)
 }
 
 /** 03:00 Tashkent: each order placed since 17:00 the evening before — its
@@ -137,7 +132,7 @@ async function sendNightBatch() {
 
   const { data: orders } = await admin
     .from('orders')
-    .select('id, order_number, company_order_number, company_id, customer_id, order_items(product_id, name, qty, unit, products(name, category, unit, price, unit_prices))')
+    .select('id, order_number, company_order_number, company_id, customer_id, order_items(product_id, name, qty, unit, products(name, category))')
     .neq('status', 'cancelled')
     .gte('created_at', start.toISOString())
     .lt('created_at', end.toISOString())
@@ -147,16 +142,14 @@ async function sendNightBatch() {
     return
   }
   for (const o of orders) await sendOrderDocument(o.id).catch((err) => console.error('order document', o.id, err))
-  const rows = new Map<string, SummaryRow>()
+  const rows = new Map<string, XlsxSummaryRow>()
   for (const o of orders) {
     // deno-lint-ignore no-explicit-any
     for (const i of o.order_items as any[]) {
       const unit = UNIT_RU[i.unit] ?? i.unit
       const key = `${i.product_id ?? i.name}|${unit}`
       const p = i.products
-      const sameUnit = p && ((UNIT_RU[p.unit] ?? p.unit) === unit || !(p.unit_prices?.length))
-      const price = !p ? null : sameUnit ? Number(p.price) : Number(p.unit_prices.find((u: { unit: string }) => (UNIT_RU[u.unit] ?? u.unit) === unit)?.price ?? NaN)
-      const row = rows.get(key) ?? { name: p?.name ?? i.name, category: p?.category ?? null, unit, total: 0, price: Number.isFinite(price) ? price : null }
+      const row = rows.get(key) ?? { name: p?.name ?? i.name, category: p?.category ?? null, unit, total: 0 }
       row.total += Number(i.qty)
       rows.set(key, row)
     }
@@ -166,8 +159,8 @@ async function sendNightBatch() {
   const nameOf = new Map((companies ?? []).map((c) => [c.id, c.company_name || c.name]))
   const list = orders.map((o) => `${nameOf.get(o.company_id ?? o.customer_id) ?? 'Клиент'} №${o.company_order_number ?? o.order_number}`).join(', ')
   const day = end.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
-  const pdf = await summaryPdf('Товары по заказам — нужно списать', `${period} · заказов: ${orders.length} (${list})`, [...rows.values()])
-  await sendPdf(DOCS_CHAT_ID, pdf, `Товары по заказам ${day}.pdf`, `Товары по заказам, ${period}: ${rows.size} поз. из ${orders.length} заказов`)
+  const file = await summaryXlsx('Товары по заказам — нужно списать', `${period} · заказов: ${orders.length} (${list})`, [...rows.values()])
+  await sendFile(DOCS_CHAT_ID, file, `Товары по заказам ${day}.xlsx`, `Товары по заказам, ${period}: ${rows.size} поз. из ${orders.length} заказов`)
 }
 
 /** A labelled example of both documents, built from real catalog products —
@@ -176,22 +169,11 @@ async function sendSample() {
   if (!DOCS_CHAT_ID) return
   const { data: products } = await admin.from('products').select('name, category, unit').eq('active', true).in('category', ['Fruits', 'Vegetables', 'Herbs', 'Dairy']).limit(40)
   const pick = (products ?? []).filter((_, i) => i % 5 === 0).slice(0, 7)
-  const lines = pick.map((p, i) => ({ name: p.name.trim(), category: p.category, qty: [10, 2, 5, 1.5, 3, 4, 2][i] ?? 1, unit: UNIT_RU[p.unit] ?? p.unit, price: 0 }))
-  const pdf = await orderPdf({
-    number: 1,
-    company: 'ПРИМЕР — Компания',
-    placedBy: 'Повар',
-    contact: '+998 90 000 00 00',
-    createdAt: new Date().toISOString(),
-    address: 'ул. Примерная, 1',
-    slot: 'Как можно скорее',
-    payment: 'Перечисление',
-    deliveryFee: 0,
-    lines,
-  })
-  await sendPdf(DOCS_CHAT_ID, pdf, 'ПРИМЕР накладной.pdf', 'Пример: так будет выглядеть накладная каждого заказа (17:00–03:00).')
-  const summary = await summaryPdf('Товары по заказам — нужно списать', 'ПРИМЕР · заказов: 1 (ПРИМЕР — Компания №1)', lines.map((l) => ({ ...l, total: l.qty, price: null })))
-  await sendPdf(DOCS_CHAT_ID, summary, 'ПРИМЕР товары по заказам.pdf', 'Пример: общий список, придёт в 03:00 вместе с накладными.')
+  const lines = pick.map((p, i) => ({ name: p.name.trim(), category: p.category, qty: [10, 2, 5, 1.5, 3, 4, 2][i] ?? 1, unit: UNIT_RU[p.unit] ?? p.unit }))
+  const order = await orderXlsx({ number: 1, company: 'ПРИМЕР — Компания', createdAt: new Date().toISOString(), staffRole: 'Повар', contact: 'Иван', phone: '+998 90 000 00 00', lines })
+  await sendFile(DOCS_CHAT_ID, order, 'ПРИМЕР накладной.xlsx', 'Пример: так будет выглядеть накладная каждого заказа (17:00–03:00).')
+  const summary = await summaryXlsx('Товары по заказам — нужно списать', 'ПРИМЕР · заказов: 1 (ПРИМЕР — Компания №1)', lines.map((l) => ({ ...l, total: l.qty })))
+  await sendFile(DOCS_CHAT_ID, summary, 'ПРИМЕР товары по заказам.xlsx', 'Пример: общий список, придёт в 03:00 вместе с накладными.')
 }
 
 function formatQty(n: number) {
