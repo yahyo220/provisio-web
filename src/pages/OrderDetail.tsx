@@ -535,12 +535,30 @@ function OrderDetailForm({ order }: { order: OrderRow }) {
             <div className="info-list">
               <div className="info-row">
                 <span className="k">{t('common.company')}</span>
-                <span className="v">{order.customer}</span>
+                <span className="v">{order.companyName}</span>
               </div>
+              {order.customer !== order.companyName && (
+                <div className="info-row">
+                  <span className="k">Заказал</span>
+                  <span className="v">{order.customer}</span>
+                </div>
+              )}
               <div className="info-row">
                 <span className="k">{t('common.contact')}</span>
                 <span className="v">{order.meta}</span>
               </div>
+              {order.source === 'telegram' && (
+                <div className="info-row">
+                  <span className="k">Источник</span>
+                  <span className="v">Telegram-группа</span>
+                </div>
+              )}
+              {order.notes && (
+                <div className="info-row">
+                  <span className="k">Примечание</span>
+                  <span className="v" style={{ whiteSpace: 'pre-wrap' }}>{order.notes}</span>
+                </div>
+              )}
               {order.deliverySlot && (
                 <div className="info-row">
                   <span className="k">{t('orderDetail.deliveryTime')}</span>

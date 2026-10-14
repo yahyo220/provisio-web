@@ -47,6 +47,10 @@ export interface OrderRow {
   deliveryAddress?: string
   /** orders.payment_method — 'cash' | 'transfer' ('card' on very old orders). */
   paymentMethod?: string
+  /** 'telegram' for orders taken by the Telegram bot; '' from the app. */
+  source?: string
+  /** orders.notes — e.g. lines the Telegram bot couldn't recognise. */
+  notes?: string
 }
 
 /** One order_items row, joined just enough for stats math (category

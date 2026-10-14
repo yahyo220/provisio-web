@@ -161,6 +161,8 @@ export async function fetchAll(): Promise<FetchedData> {
       deliverySlot: row.delivery_slot || '',
       deliveryAddress: row.delivery_address || '',
       paymentMethod: row.payment_method || '',
+      source: row.source || '',
+      notes: row.notes || '',
     }
   })
 
