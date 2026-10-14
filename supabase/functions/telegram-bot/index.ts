@@ -119,14 +119,24 @@ async function sendOrderDocument(orderId: string) {
 
 /** 03:00 Tashkent: each order placed since 17:00 the evening before — its
  * накладная, then "Товары по заказам" for all of them added up. */
-async function sendNightBatch() {
+async function sendNightBatch(soFar = false) {
   if (!DOCS_CHAT_ID) return console.error('TELEGRAM_DOCS_CHAT_ID not set — nothing sent')
   // Tashkent is UTC+5 all year: 03:00 there is 22:00 UTC, 17:00 is 12:00 UTC.
-  const end = new Date()
-  end.setUTCMinutes(0, 0, 0)
-  if (end.getUTCHours() < 22) end.setUTCDate(end.getUTCDate() - 1)
-  end.setUTCHours(22)
-  const start = new Date(end.getTime() - 10 * 3600 * 1000)
+  // soFar: tonight's window up to this moment (sent on request, not by cron).
+  let start: Date
+  let end: Date
+  if (soFar) {
+    end = new Date()
+    start = new Date(end)
+    start.setUTCHours(12, 0, 0, 0)
+    if (start > end) start.setUTCDate(start.getUTCDate() - 1)
+  } else {
+    end = new Date()
+    end.setUTCMinutes(0, 0, 0)
+    if (end.getUTCHours() < 22) end.setUTCDate(end.getUTCDate() - 1)
+    end.setUTCHours(22)
+    start = new Date(end.getTime() - 10 * 3600 * 1000)
+  }
   const fmt = (d: Date) => d.toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
   const period = `${fmt(start)} – ${fmt(end)}`
 
@@ -304,7 +314,8 @@ Deno.serve(async (req) => {
       const body = await req.json()
       // Answer the database right away; building and sending the PDFs keeps
       // running in the background (pg_net gives up waiting after seconds).
-      const work = body.kind === 'daily' ? sendNightBatch() : body.kind === 'sample' ? sendSample() : Promise.resolve()
+      const work =
+        body.kind === 'daily' ? sendNightBatch() : body.kind === 'now' ? sendNightBatch(true) : body.kind === 'sample' ? sendSample() : Promise.resolve()
       const done = work.catch((err) => console.error(body.kind, err))
       // deno-lint-ignore no-explicit-any
       const runtime = (globalThis as any).EdgeRuntime
