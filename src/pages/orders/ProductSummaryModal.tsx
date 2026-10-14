@@ -4,7 +4,7 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { useLanguage } from '../../i18n/LanguageContext'
 import { downloadProductSummaryExcel, formatSummaryQty, printProductSummary, summarizeItems } from '../../lib/productSummary'
-import { orderLabel } from '../../lib/format'
+import { formatMoney, orderLabel, parseMoney } from '../../lib/format'
 import type { OrderStatus } from '../../lib/types'
 import { addDays, createDemoWarehouse, formatDay, formatQty, stockOf, toDateIso, todayIso } from '../../lib/warehouse'
 import { useData } from '../../store/DataContext'
@@ -52,15 +52,23 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
 
   const rows = useMemo(() => {
     const ids = new Set(chosen.map((o) => o.id))
-    const categoryById = new Map(products.map((p) => [p.id, p.category]))
+    const productById = new Map(products.map((p) => [p.id, p]))
+    // The catalog's current price for the unit that was ordered (main unit
+    // or one of its extra units).
+    const priceOf = (productId: string, u: string) => {
+      const p = productById.get(productId)
+      const text = !p ? '' : p.unit === u ? p.price : p.unitPrices.find((x) => x.unit === u)?.price ?? ''
+      return text ? parseMoney(text) || null : null
+    }
     const stockText = (productId: string) => {
       const settings = warehouse.settings[productId]
       return settings ? `${formatQty(stockOf(warehouse, productId))} ${unit(settings.baseUnit)}` : undefined
     }
     return summarizeItems(
       orderItems.filter((i) => ids.has(i.orderId)),
-      (id) => categoryById.get(id),
+      (id) => productById.get(id)?.category,
       stockText,
+      priceOf,
     )
   }, [chosen, orderItems, products, warehouse, unit])
 
@@ -150,6 +158,7 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
                 <th>№</th>
                 <th>Товар</th>
                 <th style={{ textAlign: 'right' }}>Количество</th>
+                <th style={{ textAlign: 'right' }}>Цена</th>
                 <th style={{ textAlign: 'right' }}>На складе</th>
               </tr>
             </thead>
@@ -164,6 +173,7 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
                       <span className="unit">{unit(r.unit)}</span>
                     </span>
                   </td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{r.price != null ? formatMoney(r.price) : '—'}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className="unit-muted">
                     {r.stock}
                   </td>

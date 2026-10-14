@@ -4,6 +4,7 @@
 // went ("Списано": delivered orders), for whichever days are picked.
 import ExcelJS from 'exceljs'
 import { byCatalog } from './catalogOrder'
+import { formatMoney } from './format'
 import { esc, printHtml } from './printOrder'
 import type { OrderItemRow } from './types'
 import { THIN_BORDER, triggerXlsxDownload } from './xlsxShared'
@@ -13,6 +14,8 @@ export interface SummaryRow {
   name: string
   unit: string
   total: number
+  /** Current catalog price for this unit, in сум — null when unknown. */
+  price: number | null
   /** What the warehouse holds right now, e.g. "12,5 кг" — '—' when unknown. */
   stock: string
 }
@@ -24,6 +27,7 @@ export function summarizeItems(
   items: OrderItemRow[],
   categoryOf: (productId: string) => string | undefined,
   stockOf: (productId: string) => string | undefined,
+  priceOf: (productId: string, unit: string) => number | null,
 ): SummaryRow[] {
   const rows = new Map<string, { productId: string | null; name: string; unit: string; total: number }>()
   for (const item of items) {
@@ -39,6 +43,7 @@ export function summarizeItems(
     name: r.name,
     unit: r.unit,
     total: Math.round(r.total * 1000) / 1000,
+    price: r.productId ? priceOf(r.productId, r.unit) : null,
     stock: (r.productId && stockOf(r.productId)) || '—',
   }))
   return byCatalog(summed, (r) => (r.productId ? categoryOf(r.productId) : undefined), (r) => r.name)
@@ -68,11 +73,11 @@ export function printProductSummary(title: string, subtitle: string, rows: Summa
   <h1>${esc(title)}</h1>
   <div class="sub">${esc(subtitle)}</div>
   <table>
-    <thead><tr><th class="check"></th><th>№</th><th>Товар</th><th>Ед.</th><th class="num">Количество</th><th class="num stock">На складе</th></tr></thead>
+    <thead><tr><th class="check"></th><th>№</th><th>Товар</th><th>Ед.</th><th class="num">Количество</th><th class="num">Цена</th><th class="num stock">На складе</th></tr></thead>
     <tbody>${rows
       .map(
         (r, i) =>
-          `<tr><td class="check">☐</td><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(unitLabel(r.unit))}</td><td class="num">${esc(formatSummaryQty(r.total))}</td><td class="num stock">${esc(r.stock)}</td></tr>`,
+          `<tr><td class="check">☐</td><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(unitLabel(r.unit))}</td><td class="num">${esc(formatSummaryQty(r.total))}</td><td class="num stock">${r.price != null ? esc(formatMoney(r.price)) : '—'}</td><td class="num stock">${esc(r.stock)}</td></tr>`,
       )
       .join('')}</tbody>
   </table>
@@ -83,14 +88,14 @@ export function printProductSummary(title: string, subtitle: string, rows: Summa
 export async function downloadProductSummaryExcel(title: string, subtitle: string, rows: SummaryRow[], unitLabel: (u: string) => string, filename: string) {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Товары')
-  ws.columns = [{ width: 6 }, { width: 40 }, { width: 10 }, { width: 14 }, { width: 16 }]
+  ws.columns = [{ width: 6 }, { width: 40 }, { width: 10 }, { width: 14 }, { width: 14 }, { width: 16 }]
   ws.getCell(1, 1).value = title
   ws.getCell(1, 1).font = { bold: true, size: 14 }
-  ws.mergeCells(1, 1, 1, 5)
+  ws.mergeCells(1, 1, 1, 6)
   ws.getCell(2, 1).value = subtitle
   ws.getCell(2, 1).font = { size: 10, color: { argb: 'FF55523F' } }
-  ws.mergeCells(2, 1, 2, 5)
-  const headers = ['№', 'Товар', 'Ед.', 'Количество', 'На складе']
+  ws.mergeCells(2, 1, 2, 6)
+  const headers = ['№', 'Товар', 'Ед.', 'Количество', 'Цена, сум', 'На складе']
   headers.forEach((h, i) => {
     const cell = ws.getCell(4, i + 1)
     cell.value = h
@@ -100,13 +105,14 @@ export async function downloadProductSummaryExcel(title: string, subtitle: strin
     cell.border = THIN_BORDER
   })
   rows.forEach((r, i) => {
-    const values: (string | number)[] = [i + 1, r.name, unitLabel(r.unit), r.total, r.stock]
+    const values: (string | number)[] = [i + 1, r.name, unitLabel(r.unit), r.total, r.price ?? '—', r.stock]
     values.forEach((v, c) => {
       const cell = ws.getCell(5 + i, c + 1)
       cell.value = v
       cell.font = { size: 11 }
       cell.alignment = { horizontal: c >= 3 ? 'right' : 'left' }
       if (c === 3) cell.numFmt = '#,##0.###'
+      if (c === 4) cell.numFmt = '#,##0'
       cell.border = THIN_BORDER
     })
   })
