@@ -77,7 +77,8 @@ interface TgMessage {
 
 async function handleCommand(msg: TgMessage, text: string) {
   const [rawCmd, ...args] = text.trim().split(/\s+/)
-  const cmd = rawCmd.split('@')[0].toLowerCase()
+  // "/id." or "/link@freshline_bot" → "/id", "/link".
+  const cmd = rawCmd.split('@')[0].toLowerCase().replace(/[^a-z/]/g, '')
   const isAdmin = msg.from && ADMIN_IDS.has(String(msg.from.id))
 
   if (cmd === '/id') {
