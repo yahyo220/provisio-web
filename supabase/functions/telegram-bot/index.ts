@@ -386,17 +386,14 @@ async function handleOrder(msg: TgMessage, text: string) {
   const { data: link } = await admin.from('telegram_chats').select('customer_id').eq('chat_id', msg.chat.id).maybeSingle()
   if (link) return placeFromText(msg.chat.id, msg.message_id, text)
 
-  // A group nobody linked yet: keep the order and ask the admins whose group it is.
-  const { data: waiting } = await admin.from('telegram_pending').select('id').eq('chat_id', msg.chat.id).limit(1)
-  await admin.from('telegram_pending').insert({ chat_id: msg.chat.id, chat_title: msg.chat.title ?? null, message_id: msg.message_id, text })
-  if (!waiting?.length) {
-    await reply(msg.chat.id, msg.message_id, 'Спасибо! Заказ получен, скоро подтвердим.')
-    await askWhichClient(msg.chat.id, msg.chat.title ?? 'без названия')
-  }
+  // A group nobody linked yet: the order is placed right away without a
+  // client, and the admins pick the client with a button afterwards.
+  const placed = await placeFromText(msg.chat.id, msg.message_id, text, msg.chat.title ?? 'без названия')
+  if (placed && !placed.merged) await askWhichClient(msg.chat.id, msg.chat.title ?? 'без названия')
 }
 
 /** Turns one message into an order (or a follow-up) for the group's client and answers in the group. */
-async function placeFromText(chatId: number, messageId: number, text: string) {
+async function placeFromText(chatId: number, messageId: number, text: string, unlinkedTitle?: string) {
   const lines = parseOrderText(text, await loadCatalog())
   const ok = lines.filter((l) => l.product && l.qty)
   if (ok.length === 0) return
@@ -410,11 +407,10 @@ async function placeFromText(chatId: number, messageId: number, text: string) {
     .filter(Boolean)
     .join('\n')
 
-  const { data: placed, error: placeError } = await admin.rpc('telegram_place_order', {
-    p_chat_id: chatId,
-    p_items: ok.map((l) => ({ product_id: l.product!.id, qty: l.qty, unit: l.unit })),
-    p_notes: notes,
-  })
+  const items = ok.map((l) => ({ product_id: l.product!.id, qty: l.qty, unit: l.unit }))
+  const { data: placed, error: placeError } = unlinkedTitle
+    ? await admin.rpc('telegram_place_order_unlinked', { p_chat_id: chatId, p_title: unlinkedTitle, p_items: items, p_notes: notes })
+    : await admin.rpc('telegram_place_order', { p_chat_id: chatId, p_items: items, p_notes: notes })
   if (placeError || !placed) {
     console.error(placeError)
     const why = /payment is not enabled|not enabled/.test(placeError?.message ?? '')
@@ -424,7 +420,9 @@ async function placeFromText(chatId: number, messageId: number, text: string) {
     return null
   }
 
-  const head = placed.merged ? `➕ Добавлено в заказ №${placed.number}:` : `✅ Заказ №${placed.number} принят:`
+  // Before a client is chosen there's no company number yet, so none is shown.
+  const no = unlinkedTitle ? '' : ` №${placed.number}`
+  const head = placed.merged ? `➕ Добавлено в заказ${no}:` : `✅ Заказ${no} принят:`
   const body = ok.map((l) => `• ${esc(l.product!.name.trim())} — ${formatQty(l.qty!)} ${esc(l.unit)}`).join('\n')
   const extra = [
     unknown.length ? `\n⚠️ Не понял, уточните, пожалуйста:\n${unknown.map((l) => `• ${esc(l.text)}`).join('\n')}` : '',
@@ -459,34 +457,33 @@ async function askWhichClient(chatId: number, title: string) {
   for (const id of await adminChatIds()) {
     await telegram('sendMessage', {
       chat_id: id,
-      text: `Новая группа «${title}» прислала заказ. Чей это клиент? Нажмите — группа привяжется, и заказ оформится.`,
+      text: `Новая группа «${title}» прислала заказ — он уже на сайте, но без клиента. Чей это клиент? Нажмите — группа привяжется, и заказ перейдёт к нему.`,
       reply_markup: { inline_keyboard: rows },
     })
   }
 }
 
-/** An admin picked the client for a new group: link it and place what was waiting. */
+/** An admin picked the client for a new group: link it and hand over its orders. */
 async function linkFromButton(cb: TgCallback, chatId: number, customerId: string) {
-  const { data: waiting } = await admin.from('telegram_pending').select('id, chat_title, message_id, text').eq('chat_id', chatId).order('id')
-  const title = waiting?.[0]?.chat_title ?? 'группа'
+  const { data: chat } = await telegram('getChat', { chat_id: chatId })
+  const title: string = chat?.title ?? 'группа'
   const edit = (text: string) =>
     cb.message ? telegram('editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text }) : Promise.resolve()
 
   if (customerId === 'ignore') {
-    await admin.from('telegram_pending').delete().eq('chat_id', chatId)
+    // Its client-less orders are cancelled, and the bot leaves the group.
+    await admin.from('orders').update({ status: 'cancelled' }).eq('telegram_chat_id', chatId).is('customer_id', null)
     await telegram('leaveChat', { chat_id: chatId })
-    return edit(`Группа «${title}»: заказы не принимаются, бот вышел из группы.`)
+    return edit(`Группа «${title}»: заказы не принимаются, её заказы отменены, бот вышел из группы.`)
   }
   const { data: client } = await admin.from('customers').select('name, company_name').eq('id', customerId).maybeSingle()
   if (!client) return edit('Не нашёл этого клиента.')
-  const { data: already } = await admin.from('telegram_chats').select('customer_id').eq('chat_id', chatId).maybeSingle()
-  if (already) return edit(`Группа «${title}» уже привязана.`)
-
-  await admin.from('telegram_chats').upsert({ chat_id: chatId, customer_id: customerId, title, linked_at: new Date().toISOString() })
-  await admin.from('telegram_pending').delete().eq('chat_id', chatId)
-  let placed = 0
-  for (const w of waiting ?? []) if (await placeFromText(chatId, Number(w.message_id), w.text)) placed++
-  return edit(`Готово: группа «${title}» → ${client.company_name || client.name}. Оформлено заказов: ${placed}.`)
+  const { data: moved, error } = await admin.rpc('telegram_assign_chat', { p_chat_id: chatId, p_customer_id: customerId, p_title: title })
+  if (error) {
+    console.error(error)
+    return edit('Не получилось привязать группу, попробуйте ещё раз.')
+  }
+  return edit(`Готово: группа «${title}» → ${client.company_name || client.name}. Заказов передано клиенту: ${moved ?? 0}.`)
 }
 
 Deno.serve(async (req) => {
