@@ -22,11 +22,17 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { parseOrderText, prepareCatalog, type CatalogProduct } from './parse.ts'
+import { money, orderPdf, summaryPdf, type SummaryRow } from './pdf.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET')
+// The one person who gets every order's накладная and the 03:00 summary.
+const DOCS_CHAT_ID = Deno.env.get('TELEGRAM_DOCS_CHAT_ID')
+// Shared with send-push: the database's own calls (new app order, daily
+// summary from pg_cron) carry it as x-webhook-secret — see migration 0064.
+const DB_SECRET = Deno.env.get('WEBHOOK_SECRET')
 const ADMIN_IDS = new Set((Deno.env.get('TELEGRAM_ADMIN_IDS') ?? '').split(',').map((s) => s.trim()).filter(Boolean))
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
@@ -62,6 +68,92 @@ async function telegram(method: string, payload: Record<string, unknown>) {
 
 function reply(chatId: number, messageId: number, text: string) {
   return telegram('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', reply_to_message_id: messageId, allow_sending_without_reply: true })
+}
+
+const UNIT_RU: Record<string, string> = { kg: 'кг', piece: 'шт.', box: 'коробка', bottle: 'бутылка', package: 'упаковка', bunch: 'пучок', bag: 'мешок', pack: 'уп.', gram: 'грамм' }
+const PAYMENT_RU: Record<string, string> = { cash: 'Наличные', transfer: 'Перечисление', card: 'Карта' }
+const PENDING = ['new', 'confirmed', 'preparing', 'ready', 'out']
+
+async function sendPdf(chatId: string, bytes: Uint8Array, filename: string, caption: string) {
+  const form = new FormData()
+  form.append('chat_id', chatId)
+  form.append('caption', caption)
+  form.append('document', new Blob([bytes], { type: 'application/pdf' }), filename)
+  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, { method: 'POST', body: form })
+  if (!res.ok) console.error('sendDocument', res.status, await res.text())
+}
+
+/** The order's накладная as a PDF, to the documents recipient. */
+async function sendOrderDocument(orderId: string) {
+  if (!DOCS_CHAT_ID) return console.error('TELEGRAM_DOCS_CHAT_ID not set — no document sent')
+  const { data: o } = await admin
+    .from('orders')
+    .select('id, order_number, company_order_number, created_at, delivery_address, delivery_slot, payment_method, source, customer_id, company_id, order_items(name, qty, unit, unit_price, products(name, category))')
+    .eq('id', orderId)
+    .maybeSingle()
+  if (!o) return
+  const ids = [o.customer_id, o.company_id].filter(Boolean)
+  const { data: people } = await admin.from('customers').select('id, name, company_name, staff_role').in('id', ids)
+  const person = people?.find((c) => c.id === o.customer_id)
+  const company = people?.find((c) => c.id === (o.company_id ?? o.customer_id))
+  const companyName = company?.company_name || company?.name || 'Клиент'
+  const number = o.company_order_number ?? o.order_number
+  // deno-lint-ignore no-explicit-any
+  const lines = (o.order_items as any[]).map((i) => ({
+    name: i.products?.name ?? i.name,
+    category: i.products?.category ?? null,
+    qty: Number(i.qty),
+    unit: UNIT_RU[i.unit] ?? i.unit,
+    price: Number(i.unit_price),
+  }))
+  const pdf = await orderPdf({
+    number,
+    company: companyName,
+    placedBy: [person?.name, person?.staff_role].filter(Boolean).join(', '),
+    createdAt: o.created_at,
+    address: o.delivery_address ?? '',
+    slot: o.delivery_slot ?? '',
+    payment: PAYMENT_RU[o.payment_method ?? ''] ?? '',
+    lines,
+  })
+  const total = lines.reduce((s, l) => s + l.qty * l.price, 0)
+  const via = o.source === 'telegram' ? 'Telegram' : 'приложение'
+  await sendPdf(DOCS_CHAT_ID, pdf, `Заказ ${companyName} №${number}.pdf`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз., ${money(total)} без НДС`)
+}
+
+/** Every product across the orders not delivered yet, added up — sent at 03:00. */
+async function sendDailySummary() {
+  if (!DOCS_CHAT_ID) return console.error('TELEGRAM_DOCS_CHAT_ID not set — no summary sent')
+  const { data: orders } = await admin
+    .from('orders')
+    .select('id, order_number, company_order_number, company_id, customer_id, order_items(product_id, name, qty, unit, products(name, category, unit, price, unit_prices))')
+    .in('status', PENDING)
+    .order('created_at')
+  if (!orders?.length) {
+    await telegram('sendMessage', { chat_id: DOCS_CHAT_ID, text: 'Товары по заказам: невыполненных заказов нет.' })
+    return
+  }
+  const rows = new Map<string, SummaryRow>()
+  for (const o of orders) {
+    // deno-lint-ignore no-explicit-any
+    for (const i of o.order_items as any[]) {
+      const unit = UNIT_RU[i.unit] ?? i.unit
+      const key = `${i.product_id ?? i.name}|${unit}`
+      const p = i.products
+      const sameUnit = p && ((UNIT_RU[p.unit] ?? p.unit) === unit || !(p.unit_prices?.length))
+      const price = !p ? null : sameUnit ? Number(p.price) : Number(p.unit_prices.find((u: { unit: string }) => (UNIT_RU[u.unit] ?? u.unit) === unit)?.price ?? NaN)
+      const row = rows.get(key) ?? { name: p?.name ?? i.name, category: p?.category ?? null, unit, total: 0, price: Number.isFinite(price) ? price : null }
+      row.total += Number(i.qty)
+      rows.set(key, row)
+    }
+  }
+  const ids = [...new Set(orders.map((o) => o.company_id ?? o.customer_id).filter(Boolean))]
+  const { data: companies } = await admin.from('customers').select('id, name, company_name').in('id', ids)
+  const nameOf = new Map((companies ?? []).map((c) => [c.id, c.company_name || c.name]))
+  const list = orders.map((o) => `${nameOf.get(o.company_id ?? o.customer_id) ?? 'Клиент'} №${o.company_order_number ?? o.order_number}`).join(', ')
+  const day = new Date().toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
+  const pdf = await summaryPdf('Товары по заказам — нужно собрать', `${day} · заказов: ${orders.length} (${list})`, [...rows.values()])
+  await sendPdf(DOCS_CHAT_ID, pdf, `Товары по заказам ${day}.pdf`, `Товары по заказам на ${day}: ${rows.size} поз. из ${orders.length} заказов`)
 }
 
 function formatQty(n: number) {
@@ -162,6 +254,8 @@ async function handleOrder(msg: TgMessage, text: string) {
     noQty.length ? `\n❓ Не указано количество:\n${noQty.map((l) => `• ${esc(l.text)}`).join('\n')}` : '',
   ].join('')
   await reply(msg.chat.id, msg.message_id, `${head}\n${body}${extra}`)
+  // A follow-up message re-sends the whole updated накладная.
+  await sendOrderDocument(placed.id).catch((err) => console.error('order document', err))
 }
 
 Deno.serve(async (req) => {
@@ -181,6 +275,17 @@ Deno.serve(async (req) => {
         allowed_updates: ['message'],
       })
       return json(result)
+    }
+
+    // Calls from the database itself (migration 0064): a new order placed in
+    // the app, and the daily summary from pg_cron.
+    const dbSecret = req.headers.get('x-webhook-secret')
+    if (dbSecret) {
+      if (!DB_SECRET || dbSecret !== DB_SECRET) return json({ error: 'Unauthorized' }, 401)
+      const body = await req.json()
+      if (body.kind === 'order' && body.order_id) await sendOrderDocument(body.order_id)
+      else if (body.kind === 'daily') await sendDailySummary()
+      return json({ ok: true })
     }
 
     if (req.headers.get('x-telegram-bot-api-secret-token') !== WEBHOOK_SECRET) {
