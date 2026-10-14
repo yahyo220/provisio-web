@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { useLanguage } from '../../i18n/LanguageContext'
+import { translateUnit } from '../../i18n/translations'
 import { downloadProductSummaryExcel, formatSummaryQty, printProductSummary, summarizeItems } from '../../lib/productSummary'
 import { formatMoney, orderLabel, parseMoney } from '../../lib/format'
 import type { OrderStatus } from '../../lib/types'
@@ -54,10 +55,15 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
     const ids = new Set(chosen.map((o) => o.id))
     const productById = new Map(products.map((p) => [p.id, p]))
     // The catalog's current price for the unit that was ordered (main unit
-    // or one of its extra units).
+    // or one of its extra units). Order lines store the unit as the app
+    // showed it ("кг", "шт."), products as a code ("kg", "piece") — compare
+    // both in their Russian form.
+    const same = (a: string, b: string) => translateUnit(a, 'ru').trim() === translateUnit(b, 'ru').trim()
     const priceOf = (productId: string, u: string) => {
       const p = productById.get(productId)
-      const text = !p ? '' : p.unit === u ? p.price : p.unitPrices.find((x) => x.unit === u)?.price ?? ''
+      // A product sold in one unit only has one price, whatever the app's
+      // language called that unit.
+      const text = !p ? '' : same(p.unit, u) || p.unitPrices.length === 0 ? p.price : p.unitPrices.find((x) => same(x.unit, u))?.price ?? ''
       return text ? parseMoney(text) || null : null
     }
     const stockText = (productId: string) => {
@@ -158,8 +164,8 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
                 <th>№</th>
                 <th>Товар</th>
                 <th style={{ textAlign: 'right' }}>Количество</th>
-                <th style={{ textAlign: 'right' }}>Цена</th>
                 <th style={{ textAlign: 'right' }}>На складе</th>
+                <th style={{ textAlign: 'right' }}>Цена</th>
               </tr>
             </thead>
             <tbody>
@@ -173,10 +179,10 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
                       <span className="unit">{unit(r.unit)}</span>
                     </span>
                   </td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{r.price != null ? formatMoney(r.price) : '—'}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className="unit-muted">
                     {r.stock}
                   </td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{r.price != null ? formatMoney(r.price) : '—'}</td>
                 </tr>
               ))}
             </tbody>

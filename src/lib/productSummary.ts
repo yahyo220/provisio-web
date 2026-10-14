@@ -73,11 +73,11 @@ export function printProductSummary(title: string, subtitle: string, rows: Summa
   <h1>${esc(title)}</h1>
   <div class="sub">${esc(subtitle)}</div>
   <table>
-    <thead><tr><th class="check"></th><th>№</th><th>Товар</th><th>Ед.</th><th class="num">Количество</th><th class="num">Цена</th><th class="num stock">На складе</th></tr></thead>
+    <thead><tr><th class="check"></th><th>№</th><th>Товар</th><th>Ед.</th><th class="num">Количество</th><th class="num stock">На складе</th><th class="num">Цена</th></tr></thead>
     <tbody>${rows
       .map(
         (r, i) =>
-          `<tr><td class="check">☐</td><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(unitLabel(r.unit))}</td><td class="num">${esc(formatSummaryQty(r.total))}</td><td class="num stock">${r.price != null ? esc(formatMoney(r.price)) : '—'}</td><td class="num stock">${esc(r.stock)}</td></tr>`,
+          `<tr><td class="check">☐</td><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(unitLabel(r.unit))}</td><td class="num">${esc(formatSummaryQty(r.total))}</td><td class="num stock">${esc(r.stock)}</td><td class="num stock">${r.price != null ? esc(formatMoney(r.price)) : '—'}</td></tr>`,
       )
       .join('')}</tbody>
   </table>
@@ -95,7 +95,7 @@ export async function downloadProductSummaryExcel(title: string, subtitle: strin
   ws.getCell(2, 1).value = subtitle
   ws.getCell(2, 1).font = { size: 10, color: { argb: 'FF55523F' } }
   ws.mergeCells(2, 1, 2, 6)
-  const headers = ['№', 'Товар', 'Ед.', 'Количество', 'Цена, сум', 'На складе']
+  const headers = ['№', 'Товар', 'Ед.', 'Количество', 'На складе', 'Цена, сум']
   headers.forEach((h, i) => {
     const cell = ws.getCell(4, i + 1)
     cell.value = h
@@ -105,14 +105,14 @@ export async function downloadProductSummaryExcel(title: string, subtitle: strin
     cell.border = THIN_BORDER
   })
   rows.forEach((r, i) => {
-    const values: (string | number)[] = [i + 1, r.name, unitLabel(r.unit), r.total, r.price ?? '—', r.stock]
+    const values: (string | number)[] = [i + 1, r.name, unitLabel(r.unit), r.total, r.stock, r.price ?? '—']
     values.forEach((v, c) => {
       const cell = ws.getCell(5 + i, c + 1)
       cell.value = v
       cell.font = { size: 11 }
       cell.alignment = { horizontal: c >= 3 ? 'right' : 'left' }
       if (c === 3) cell.numFmt = '#,##0.###'
-      if (c === 4) cell.numFmt = '#,##0'
+      if (c === 5) cell.numFmt = '#,##0'
       cell.border = THIN_BORDER
     })
   })
