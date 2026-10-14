@@ -6,11 +6,13 @@
 // telegram_place_order(), which shows up on the dashboard like any other.
 // Plain chat ("спасибо", questions) matches nothing and is left alone.
 //
-// Commands (in the group):
-//   /id               — this chat's id and your Telegram user id
-//   /link <login>     — admins only: this group orders for that client
-//   /unlink           — admins only
-//   /help
+// Commands work only in a private chat with the bot, and only for its owner
+// (TELEGRAM_ADMIN_IDS) and people the owner allowed (/admins); everyone else,
+// and every group, gets no answer to a command. When the bot is added to a
+// group, the admins get a private message with a button per client.
+//   /groups  — linked groups: change the client or unlink
+//   /docs    — who receives the nightly order documents
+//   /admins  — owner only: who else may manage the bot
 //
 // Deploy with --no-verify-jwt (Telegram can't send a Supabase JWT) and set:
 //   supabase secrets set TELEGRAM_BOT_TOKEN=<from @BotFather>
@@ -43,16 +45,6 @@ const DB_SECRET = Deno.env.get('WEBHOOK_SECRET')
 const ADMIN_IDS = new Set((Deno.env.get('TELEGRAM_ADMIN_IDS') ?? '').split(',').map((s) => s.trim()).filter(Boolean))
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
-
-const HELP = [
-  'Я принимаю заказы из этой группы. Пишите списком, каждую позицию с новой строки:',
-  '',
-  'Помидор красный 10 кг',
-  'Айсберг 5 шт',
-  'Петрушка 2 пучка',
-  '',
-  'Можно по-русски или по-узбекски. Если допишете что-то в течение часа, это добавится в тот же заказ.',
-].join('\n')
 
 const DOCS_HELP = '/docs — выбрать, кто получает документы заказов (человек должен один раз нажать Start в этом боте)'
 
@@ -247,6 +239,14 @@ interface TgCallback {
 
 async function handleCallback(cb: TgCallback) {
   const answer = (text: string) => telegram('answerCallbackQuery', { callback_query_id: cb.id, text })
+  if (cb.data?.startsWith('grp:')) {
+    if (!(await isBotAdmin(cb.from.id))) return answer('')
+    const chat = Number(cb.data.slice(4))
+    const { data: info } = await telegram('getChat', { chat_id: chat })
+    await answer('')
+    if (cb.message) await askWhichClient(chat, info?.title ?? String(chat), false, { chat: cb.message.chat.id, message: cb.message.message_id })
+    return
+  }
   if (cb.data?.startsWith('cl:')) {
     if (!(await isBotAdmin(cb.from.id))) return answer('Только для администратора Freshline.')
     const [, chat, customer] = cb.data.split(':')
@@ -299,30 +299,35 @@ async function showAdminsPicker(chatId: number, replyTo?: number, editMessageId?
 }
 
 const ADMIN_START = [
-  'Здравствуйте! Вы можете управлять ботом.',
+  'Здравствуйте! Вы можете управлять ботом. Всё делается здесь, в личке — в группах бот не принимает никаких команд.',
   '',
-  'В группе клиента: /link логин — заказы из группы пойдут на этого клиента, /unlink — отвязать.',
-  'Здесь, в личке:',
+  'Когда бота добавят в группу, сюда придёт вопрос, чей это клиент.',
+  '/groups — группы и их клиенты, сменить клиента или отвязать',
   DOCS_HELP,
 ].join('\n')
 
-async function handleCommand(msg: TgMessage, text: string) {
-  const [rawCmd, ...args] = text.trim().split(/\s+/)
-  // "/id." or "/link@freshline_bot" → "/id", "/link".
-  const cmd = rawCmd.split('@')[0].toLowerCase().replace(/[^a-z/]/g, '')
-  const isPrivate = msg.chat.type === 'private'
-  const isOwner = !!msg.from && ADMIN_IDS.has(String(msg.from.id))
-  const isAdmin = await isBotAdmin(msg.from?.id)
+/** /groups: every linked group with its client; a tap opens the client picker for it. */
+async function showGroups(chatId: number, replyTo: number) {
+  const { data: chats } = await admin.from('telegram_chats').select('chat_id, title, customers(name, company_name)').order('linked_at', { ascending: false }).limit(50)
+  // deno-lint-ignore no-explicit-any
+  const buttons = (chats ?? []).map((c: any) => [{ text: `${c.title ?? c.chat_id} → ${c.customers?.company_name || c.customers?.name || '?'}`, callback_data: `grp:${c.chat_id}` }])
+  return telegram('sendMessage', {
+    chat_id: chatId,
+    reply_to_message_id: replyTo,
+    allow_sending_without_reply: true,
+    text: buttons.length ? 'Группы и их клиенты. Нажмите на группу, чтобы сменить клиента или отвязать её.' : 'Пока ни одна группа не привязана.',
+    reply_markup: { inline_keyboard: buttons },
+  })
+}
 
-  // In groups only /link and /unlink exist, and only for admins; anything
-  // else — and anything from anyone else — gets no answer at all.
-  if (!isPrivate) {
-    if (!isAdmin || (cmd !== '/link' && cmd !== '/unlink')) return
-  } else if (!isAdmin) {
-    // Strangers can only say hello (that's how someone becomes selectable for /docs or /admins).
-    if (cmd === '/start') return reply(msg.chat.id, msg.message_id, 'Здравствуйте! Это бот Freshline.')
-    return
-  }
+async function handleCommand(msg: TgMessage, text: string) {
+  // Commands exist only in a private chat with someone who manages the bot.
+  // In groups — and for everyone else — the bot doesn't answer at all.
+  if (msg.chat.type !== 'private' || !(await isBotAdmin(msg.from?.id))) return
+  const [rawCmd, ...args] = text.trim().split(/\s+/)
+  // "/id." or "/docs@freshline_bot" → "/id", "/docs".
+  const cmd = rawCmd.split('@')[0].toLowerCase().replace(/[^a-z/]/g, '')
+  const isOwner = !!msg.from && ADMIN_IDS.has(String(msg.from.id))
 
   if (cmd === '/start' || cmd === '/help') {
     return reply(msg.chat.id, msg.message_id, esc(isOwner ? `${ADMIN_START}\n/admins — кто ещё может управлять ботом` : ADMIN_START))
@@ -330,6 +335,7 @@ async function handleCommand(msg: TgMessage, text: string) {
   if (cmd === '/id') {
     return reply(msg.chat.id, msg.message_id, `Ваш ID в Telegram: <code>${msg.from?.id ?? '—'}</code>`)
   }
+  if (cmd === '/groups') return showGroups(msg.chat.id, msg.message_id)
   if (cmd === '/admins') {
     if (!isOwner) return reply(msg.chat.id, msg.message_id, 'Это может только владелец бота.')
     return showAdminsPicker(msg.chat.id, msg.message_id)
@@ -344,28 +350,6 @@ async function handleCommand(msg: TgMessage, text: string) {
     }
     await admin.from('telegram_settings').upsert({ key: 'docs_chat_id', value: target, updated_at: new Date().toISOString() })
     return reply(msg.chat.id, msg.message_id, `Готово: документы теперь получает ID <code>${esc(target)}</code>.`)
-  }
-  if (cmd === '/link' || cmd === '/unlink') {
-    if (isPrivate) return reply(msg.chat.id, msg.message_id, 'Эту команду нужно отправить в группе клиента, куда добавлен бот.')
-    if (cmd === '/unlink') {
-      await admin.from('telegram_chats').delete().eq('chat_id', msg.chat.id)
-      return reply(msg.chat.id, msg.message_id, 'Группа отвязана. Заказы отсюда больше не принимаются.')
-    }
-    const login = args.join(' ').trim()
-    if (!login) return reply(msg.chat.id, msg.message_id, 'Напишите логин клиента: /link логин')
-    // Exact login first (case-insensitive), then the client's name.
-    const pattern = login.replace(/[\\%_]/g, '\\$&')
-    let { data: customer } = await admin.from('customers').select('id, name').ilike('login', pattern).limit(2)
-    if (!customer?.length) ({ data: customer } = await admin.from('customers').select('id, name').ilike('name', pattern).limit(2))
-    if (!customer || customer.length !== 1) {
-      return reply(msg.chat.id, msg.message_id, `Не нашёл клиента «${esc(login)}». Нужен логин из приложения (как на сайте в карточке клиента).`)
-    }
-    const { error } = await admin.from('telegram_chats').upsert({ chat_id: msg.chat.id, customer_id: customer[0].id, title: msg.chat.title ?? null, linked_at: new Date().toISOString() })
-    if (error) {
-      console.error(error)
-      return reply(msg.chat.id, msg.message_id, 'Не получилось привязать группу, попробуйте ещё раз.')
-    }
-    return reply(msg.chat.id, msg.message_id, `Готово: заказы из этой группы будут оформляться на «${esc(customer[0].name)}».\n\n${esc(HELP)}`)
   }
 }
 
@@ -445,7 +429,7 @@ async function alreadyAsked(chatId: number) {
 }
 
 /** Private message to the admins: "New group — whose client is it?" with a button per client. */
-async function askWhichClient(chatId: number, title: string, justAdded = false) {
+async function askWhichClient(chatId: number, title: string, justAdded = false, onlyTo?: { chat: number; message: number }) {
   await admin.from('telegram_settings').upsert({ key: `asked:${chatId}`, value: title, updated_at: new Date().toISOString() })
   const { data: clients } = await admin
     .from('customers')
@@ -460,7 +444,11 @@ async function askWhichClient(chatId: number, title: string, justAdded = false) 
   const list = (clients ?? []).sort((a, b) => Number(t.includes(label(b).toLowerCase())) - Number(t.includes(label(a).toLowerCase())))
   const rows: { text: string; callback_data: string }[][] = []
   for (let i = 0; i < list.length; i += 2) rows.push(list.slice(i, i + 2).map((c) => ({ text: label(c), callback_data: `cl:${chatId}:${c.id}` })))
+  if (onlyTo) rows.push([{ text: '⛓️‍💥 Отвязать группу (заказы не принимаются)', callback_data: `cl:${chatId}:unlink` }])
   rows.push([{ text: '🚫 Не принимать заказы из этой группы', callback_data: `cl:${chatId}:ignore` }])
+  if (onlyTo) {
+    return telegram('editMessageText', { chat_id: onlyTo.chat, message_id: onlyTo.message, text: `Группа «${title}». Выберите клиента:`, reply_markup: { inline_keyboard: rows } })
+  }
   for (const id of await adminChatIds()) {
     await telegram('sendMessage', {
       chat_id: id,
@@ -479,9 +467,15 @@ async function linkFromButton(cb: TgCallback, chatId: number, customerId: string
   const edit = (text: string) =>
     cb.message ? telegram('editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text }) : Promise.resolve()
 
+  if (customerId === 'unlink') {
+    await admin.from('telegram_chats').delete().eq('chat_id', chatId)
+    await admin.from('telegram_settings').delete().eq('key', `asked:${chatId}`)
+    return edit(`Группа «${title}» отвязана. Её новые заказы придут без клиента, и бот снова спросит, чей это клиент.`)
+  }
   if (customerId === 'ignore') {
     // Its client-less orders are cancelled, and the bot leaves the group.
     await admin.from('orders').update({ status: 'cancelled' }).eq('telegram_chat_id', chatId).is('customer_id', null)
+    await admin.from('telegram_chats').delete().eq('chat_id', chatId)
     await telegram('leaveChat', { chat_id: chatId })
     return edit(`Группа «${title}»: заказы не принимаются, её заказы отменены, бот вышел из группы.`)
   }
