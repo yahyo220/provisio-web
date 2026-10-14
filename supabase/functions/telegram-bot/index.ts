@@ -54,14 +54,7 @@ const HELP = [
   'Можно по-русски или по-узбекски. Если допишете что-то в течение часа, это добавится в тот же заказ.',
 ].join('\n')
 
-const DOCS_HELP = [
-  'Кому приходят документы заказов (каждую ночь в 03:00):',
-  '/docs — показать, кто получает сейчас',
-  '/docs_me — получать мне',
-  '/docs 123456789 — получать человеку с этим ID',
-  '',
-  'Человек должен сначала нажать Start в этом боте и отправить /id — так он узнает свой ID.',
-].join('\n')
+const DOCS_HELP = '/docs — выбрать, кто получает документы заказов (человек должен один раз нажать Start в этом боте)'
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -208,11 +201,63 @@ function formatQty(n: number) {
   return String(Math.round(n * 1000) / 1000).replace('.', ',')
 }
 
+interface TgUser {
+  id: number
+  is_bot?: boolean
+  first_name?: string
+  last_name?: string
+  username?: string
+}
+
 interface TgMessage {
   message_id: number
   text?: string
   chat: { id: number; title?: string; type: string }
-  from?: { id: number; is_bot?: boolean }
+  from?: TgUser
+}
+
+const fullName = (u: TgUser) => [u.first_name, u.last_name].filter(Boolean).join(' ') || (u.username ? `@${u.username}` : String(u.id))
+
+/** Remembers who opened the bot privately — the choices /docs offers. */
+async function rememberUser(u: TgUser) {
+  await admin.from('telegram_users').upsert({ id: u.id, name: fullName(u), username: u.username ?? null, last_seen: new Date().toISOString() })
+}
+
+/** /docs: the current recipient and a button for each person who opened the bot. */
+async function showDocsPicker(chatId: number, replyTo: number) {
+  const current = await docsChatId()
+  const { data: users } = await admin.from('telegram_users').select('id, name, username').order('last_seen', { ascending: false }).limit(20)
+  const currentName = users?.find((u) => String(u.id) === current)?.name ?? (current ? `ID ${current}` : 'никто')
+  const buttons = (users ?? []).map((u) => [{ text: `${String(u.id) === current ? '✅ ' : ''}${u.name}${u.username ? ` (@${u.username})` : ''}`, callback_data: `docs:${u.id}` }])
+  return telegram('sendMessage', {
+    chat_id: chatId,
+    reply_to_message_id: replyTo,
+    allow_sending_without_reply: true,
+    text: `Документы заказов сейчас получает: ${currentName}.\n\nКому присылать? Нажмите на человека. Если нужного нет в списке, пусть он откроет этого бота и нажмёт Start, потом снова отправьте /docs.`,
+    reply_markup: { inline_keyboard: buttons },
+  })
+}
+
+interface TgCallback {
+  id: string
+  from: TgUser
+  data?: string
+  message?: { message_id: number; chat: { id: number } }
+}
+
+async function handleCallback(cb: TgCallback) {
+  const answer = (text: string) => telegram('answerCallbackQuery', { callback_query_id: cb.id, text })
+  if (!cb.data?.startsWith('docs:')) return answer('')
+  if (!ADMIN_IDS.has(String(cb.from.id))) return answer('Только для администратора Freshline.')
+  const target = cb.data.slice(5)
+  const { data: user } = await admin.from('telegram_users').select('name').eq('id', target).maybeSingle()
+  const test = await telegram('sendMessage', { chat_id: target, text: 'Теперь вы будете получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».' })
+  if (!test?.ok) return answer('Не могу написать этому человеку — пусть снова нажмёт Start в боте.')
+  await admin.from('telegram_settings').upsert({ key: 'docs_chat_id', value: target, updated_at: new Date().toISOString() })
+  await answer('Готово')
+  if (cb.message) {
+    await telegram('editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text: `Готово: документы заказов теперь получает ${user?.name ?? `ID ${target}`}.` })
+  }
 }
 
 async function handleCommand(msg: TgMessage, text: string) {
@@ -224,16 +269,21 @@ async function handleCommand(msg: TgMessage, text: string) {
   if (cmd === '/id') {
     return reply(msg.chat.id, msg.message_id, `ID этого чата: <code>${msg.chat.id}</code>\nВаш ID в Telegram: <code>${msg.from?.id ?? '—'}</code>`)
   }
+  if (cmd === '/start' && msg.chat.type === 'private') {
+    return reply(
+      msg.chat.id,
+      msg.message_id,
+      esc(isAdmin ? `Здравствуйте! Вы администратор.\n\n/link логин — в группе клиента: привязать её к клиенту\n${DOCS_HELP}` : 'Здравствуйте! Это бот Freshline. Если вас назначат получателем документов заказов, они будут приходить сюда.'),
+    )
+  }
   if (cmd === '/start' || cmd === '/help') {
     return reply(msg.chat.id, msg.message_id, esc(isAdmin ? `${HELP}\n\nДля администратора:\n/link логин — привязать группу к клиенту\n${DOCS_HELP}` : HELP))
   }
   if (cmd === '/docs' || cmd === '/docsme' || cmd === '/docs_me') {
     if (!isAdmin) return reply(msg.chat.id, msg.message_id, 'Эта команда только для администратора Freshline.')
+    // Plain /docs shows the buttons; "/docs 123456789" and /docs_me still work.
     const target = cmd === '/docs' ? args[0]?.replace(/[^\d-]/g, '') : String(msg.from!.id)
-    if (!target) {
-      const current = await docsChatId()
-      return reply(msg.chat.id, msg.message_id, `Сейчас документы получает ID <code>${current ?? 'никто'}</code>.\n\n${esc(DOCS_HELP)}`)
-    }
+    if (!target) return showDocsPicker(msg.chat.id, msg.message_id)
     // Check the bot can actually write there before switching.
     const test = await telegram('sendMessage', { chat_id: target, text: 'Теперь вы будете получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».' })
     if (!test?.ok) {
@@ -334,7 +384,7 @@ Deno.serve(async (req) => {
       const result = await telegram('setWebhook', {
         url: `${SUPABASE_URL}/functions/v1/telegram-bot`,
         secret_token: WEBHOOK_SECRET,
-        allowed_updates: ['message'],
+        allowed_updates: ['message', 'callback_query'],
       })
       return json(result)
     }
@@ -362,7 +412,12 @@ Deno.serve(async (req) => {
     }
 
     const update = await req.json()
+    if (update.callback_query) {
+      await handleCallback(update.callback_query)
+      return json({ ok: true })
+    }
     const msg: TgMessage | undefined = update.message
+    if (msg?.chat.type === 'private' && msg.from && !msg.from.is_bot) await rememberUser(msg.from).catch((err) => console.error('remember user', err))
     const text = msg?.text?.trim()
     if (!msg || !text || msg.from?.is_bot) return json({ ok: true })
 
