@@ -109,33 +109,41 @@ export interface XlsxSummaryRow {
   category?: string | null
   unit: string
   total: number
+  /** Catalog price for this unit, сум — null when the product has none for it. */
+  price: number | null
+  /** What the warehouse holds; null until the warehouse is kept in the database (the cell stays blank to fill in). */
+  stock: number | null
 }
 
+/** № | Товар | Ед. | Количество | На складе | Цена — like the website's Товары по заказам. */
 export async function summaryXlsx(title: string, subtitle: string, rows: XlsxSummaryRow[]): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Товары')
-  ws.columns = [{ width: 6 }, { width: 40 }, { width: 10 }, { width: 14 }]
+  const headers = ['№', 'Товар', 'Ед.', 'Количество', 'На складе', 'Цена, сум']
+  const right = new Set([3, 4, 5])
+  ws.columns = [{ width: 6 }, { width: 40 }, { width: 10 }, { width: 14 }, { width: 12 }, { width: 14 }]
   ws.getCell(1, 1).value = title
   ws.getCell(1, 1).font = { bold: true, size: 14 }
-  ws.mergeCells(1, 1, 1, 4)
+  ws.mergeCells(1, 1, 1, headers.length)
   ws.getCell(2, 1).value = subtitle
   ws.getCell(2, 1).font = { size: 10, color: { argb: 'FF55523F' } }
-  ws.mergeCells(2, 1, 2, 4)
-  ;['№', 'Товар', 'Ед.', 'Количество'].forEach((h, i) => {
+  ws.mergeCells(2, 1, 2, headers.length)
+  headers.forEach((h, i) => {
     const cell = ws.getCell(4, i + 1)
     cell.value = h
     cell.font = { bold: true, size: 11 }
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EFE9' } }
-    cell.alignment = { horizontal: i === 3 ? 'right' : 'left' }
+    cell.alignment = { horizontal: right.has(i) ? 'right' : 'left' }
     cell.border = THIN
   })
   byCatalog(rows).forEach((r, i) => {
-    ;[i + 1, r.name, r.unit, Math.round(r.total * 1000) / 1000].forEach((v, c) => {
+    ;[i + 1, r.name, r.unit, Math.round(r.total * 1000) / 1000, r.stock ?? '', r.price ?? '—'].forEach((v, c) => {
       const cell = ws.getCell(5 + i, c + 1)
       cell.value = v
       cell.font = { size: 11 }
-      cell.alignment = { horizontal: c === 3 ? 'right' : 'left' }
-      if (c === 3) cell.numFmt = '#,##0.###'
+      cell.alignment = { horizontal: right.has(c) ? 'right' : 'left' }
+      if (c === 3 || c === 4) cell.numFmt = '#,##0.###'
+      if (c === 5) cell.numFmt = '#,##0'
       cell.border = THIN
     })
   })

@@ -125,6 +125,18 @@ async function sendOrderDocument(orderId: string, to?: string[]) {
   for (const to of recipients) await sendFile(to, file, `Накладная ${companyName} №${number}.xlsx`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз.`)
 }
 
+/** The catalog's price for the unit that was ordered — the main unit, one of
+ * the extra units, or the only price a single-unit product has (same rule
+ * as the website's Товары по заказам). */
+// deno-lint-ignore no-explicit-any
+function catalogPrice(p: any, unit: string): number | null {
+  if (!p) return null
+  const ru = (u: string) => (UNIT_RU[u] ?? u).trim()
+  if (ru(p.unit) === unit || !(p.unit_prices?.length)) return Number(p.price)
+  const extra = p.unit_prices.find((u: { unit: string }) => ru(u.unit) === unit)
+  return extra ? Number(extra.price) : null
+}
+
 /** 03:00 Tashkent: each order placed since 17:00 the evening before — its
  * накладная, then "Товары по заказам" for all of them added up. */
 async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: string[]) {
@@ -155,7 +167,7 @@ async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: s
 
   let query = admin
     .from('orders')
-    .select('id, order_number, company_order_number, company_id, customer_id, order_items(product_id, name, qty, unit, products(name, category))')
+    .select('id, order_number, company_order_number, company_id, customer_id, order_items(product_id, name, qty, unit, products(name, category, unit, price, unit_prices))')
     .neq('status', 'cancelled')
     .gte('created_at', start.toISOString())
     .lt('created_at', end.toISOString())
@@ -173,7 +185,7 @@ async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: s
       const unit = UNIT_RU[i.unit] ?? i.unit
       const key = `${i.product_id ?? i.name}|${unit}`
       const p = i.products
-      const row = rows.get(key) ?? { name: p?.name ?? i.name, category: p?.category ?? null, unit, total: 0 }
+      const row = rows.get(key) ?? { name: p?.name ?? i.name, category: p?.category ?? null, unit, total: 0, price: catalogPrice(p, unit), stock: null }
       row.total += Number(i.qty)
       rows.set(key, row)
     }
@@ -197,7 +209,7 @@ async function sendSample() {
   const lines = pick.map((p, i) => ({ name: p.name.trim(), category: p.category, qty: [10, 2, 5, 1.5, 3, 4, 2][i] ?? 1, unit: UNIT_RU[p.unit] ?? p.unit }))
   const order = await orderXlsx({ number: 1, company: 'ПРИМЕР — Компания', createdAt: new Date().toISOString(), staffRole: 'Повар', contact: 'Иван', phone: '+998 90 000 00 00', lines })
   for (const to of recipients) await sendFile(to, order, 'ПРИМЕР накладной.xlsx', 'Пример: так будет выглядеть накладная каждого заказа (17:00–03:00).')
-  const summary = await summaryXlsx('Товары по заказам — нужно списать', 'ПРИМЕР · заказов: 1 (ПРИМЕР — Компания №1)', lines.map((l) => ({ ...l, total: l.qty })))
+  const summary = await summaryXlsx('Товары по заказам — нужно списать', 'ПРИМЕР · заказов: 1 (ПРИМЕР — Компания №1)', lines.map((l) => ({ ...l, total: l.qty, price: null, stock: null })))
   for (const to of recipients) await sendFile(to, summary, 'ПРИМЕР товары по заказам.xlsx', 'Пример: общий список, придёт в 03:00 вместе с накладными.')
 }
 
