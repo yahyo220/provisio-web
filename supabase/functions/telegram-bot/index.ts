@@ -247,8 +247,18 @@ interface TgCallback {
 
 async function handleCallback(cb: TgCallback) {
   const answer = (text: string) => telegram('answerCallbackQuery', { callback_query_id: cb.id, text })
+  if (cb.data?.startsWith('adm:')) {
+    if (!ADMIN_IDS.has(String(cb.from.id))) return answer('Это может только владелец бота.')
+    const id = cb.data.slice(4)
+    const { data: u } = await admin.from('telegram_users').select('is_admin, name').eq('id', id).maybeSingle()
+    if (!u) return answer('Не нашёл этого человека.')
+    await admin.from('telegram_users').update({ is_admin: !u.is_admin }).eq('id', id)
+    await answer(u.is_admin ? `${u.name}: доступ закрыт` : `${u.name}: доступ открыт`)
+    if (cb.message) await showAdminsPicker(cb.message.chat.id, undefined, cb.message.message_id)
+    return
+  }
   if (!cb.data?.startsWith('docs:')) return answer('')
-  if (!ADMIN_IDS.has(String(cb.from.id))) return answer('Только для администратора Freshline.')
+  if (!(await isBotAdmin(cb.from.id))) return answer('Только для администратора Freshline.')
   const target = cb.data.slice(5)
   const { data: user } = await admin.from('telegram_users').select('name').eq('id', target).maybeSingle()
   const test = await telegram('sendMessage', { chat_id: target, text: 'Теперь вы будете получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».' })
@@ -260,31 +270,67 @@ async function handleCallback(cb: TgCallback) {
   }
 }
 
+/** The owner (TELEGRAM_ADMIN_IDS) or someone the owner allowed with /admins. */
+async function isBotAdmin(userId: number | undefined): Promise<boolean> {
+  if (userId == null) return false
+  if (ADMIN_IDS.has(String(userId))) return true
+  const { data } = await admin.from('telegram_users').select('is_admin').eq('id', userId).maybeSingle()
+  return !!data?.is_admin
+}
+
+/** /admins: everyone who opened the bot, tap to allow or revoke managing it. */
+async function showAdminsPicker(chatId: number, replyTo?: number, editMessageId?: number) {
+  const { data: users } = await admin.from('telegram_users').select('id, name, username, is_admin').order('last_seen', { ascending: false }).limit(30)
+  const buttons = (users ?? [])
+    .filter((u) => !ADMIN_IDS.has(String(u.id)))
+    .map((u) => [{ text: `${u.is_admin ? '✅' : '⬜️'} ${u.name}${u.username ? ` (@${u.username})` : ''}`, callback_data: `adm:${u.id}` }])
+  const text = buttons.length
+    ? 'Кто может управлять ботом (привязывать группы, выбирать получателя документов)? Нажмите, чтобы разрешить ✅ или запретить ⬜️.'
+    : 'Пока никто, кроме вас, не открывал бота. Пусть человек откроет бота и нажмёт Start, потом снова отправьте /admins.'
+  if (editMessageId) return telegram('editMessageText', { chat_id: chatId, message_id: editMessageId, text, reply_markup: { inline_keyboard: buttons } })
+  return telegram('sendMessage', { chat_id: chatId, reply_to_message_id: replyTo, allow_sending_without_reply: true, text, reply_markup: { inline_keyboard: buttons } })
+}
+
+const ADMIN_START = [
+  'Здравствуйте! Вы можете управлять ботом.',
+  '',
+  'В группе клиента: /link логин — заказы из группы пойдут на этого клиента, /unlink — отвязать.',
+  'Здесь, в личке:',
+  DOCS_HELP,
+].join('\n')
+
 async function handleCommand(msg: TgMessage, text: string) {
   const [rawCmd, ...args] = text.trim().split(/\s+/)
   // "/id." or "/link@freshline_bot" → "/id", "/link".
   const cmd = rawCmd.split('@')[0].toLowerCase().replace(/[^a-z/]/g, '')
-  const isAdmin = msg.from && ADMIN_IDS.has(String(msg.from.id))
+  const isPrivate = msg.chat.type === 'private'
+  const isOwner = !!msg.from && ADMIN_IDS.has(String(msg.from.id))
+  const isAdmin = await isBotAdmin(msg.from?.id)
 
-  if (cmd === '/id') {
-    return reply(msg.chat.id, msg.message_id, `ID этого чата: <code>${msg.chat.id}</code>\nВаш ID в Telegram: <code>${msg.from?.id ?? '—'}</code>`)
+  // In groups only /link and /unlink exist, and only for admins; anything
+  // else — and anything from anyone else — gets no answer at all.
+  if (!isPrivate) {
+    if (!isAdmin || (cmd !== '/link' && cmd !== '/unlink')) return
+  } else if (!isAdmin) {
+    // Strangers can only say hello (that's how someone becomes selectable for /docs or /admins).
+    if (cmd === '/start') return reply(msg.chat.id, msg.message_id, 'Здравствуйте! Это бот Freshline.')
+    return
   }
-  if (cmd === '/start' && msg.chat.type === 'private') {
-    return reply(
-      msg.chat.id,
-      msg.message_id,
-      esc(isAdmin ? `Здравствуйте! Вы администратор.\n\n/link логин — в группе клиента: привязать её к клиенту\n${DOCS_HELP}` : 'Здравствуйте! Это бот Freshline. Если вас назначат получателем документов заказов, они будут приходить сюда.'),
-    )
-  }
+
   if (cmd === '/start' || cmd === '/help') {
-    return reply(msg.chat.id, msg.message_id, esc(isAdmin ? `${HELP}\n\nДля администратора:\n/link логин — привязать группу к клиенту\n${DOCS_HELP}` : HELP))
+    return reply(msg.chat.id, msg.message_id, esc(isOwner ? `${ADMIN_START}\n/admins — кто ещё может управлять ботом` : ADMIN_START))
   }
-  if (cmd === '/docs' || cmd === '/docsme' || cmd === '/docs_me') {
-    if (!isAdmin) return reply(msg.chat.id, msg.message_id, 'Эта команда только для администратора Freshline.')
+  if (cmd === '/id') {
+    return reply(msg.chat.id, msg.message_id, `Ваш ID в Telegram: <code>${msg.from?.id ?? '—'}</code>`)
+  }
+  if (cmd === '/admins') {
+    if (!isOwner) return reply(msg.chat.id, msg.message_id, 'Это может только владелец бота.')
+    return showAdminsPicker(msg.chat.id, msg.message_id)
+  }
+  if (cmd === '/docs' || cmd === '/docsme') {
     // Plain /docs shows the buttons; "/docs 123456789" and /docs_me still work.
     const target = cmd === '/docs' ? args[0]?.replace(/[^\d-]/g, '') : String(msg.from!.id)
     if (!target) return showDocsPicker(msg.chat.id, msg.message_id)
-    // Check the bot can actually write there before switching.
     const test = await telegram('sendMessage', { chat_id: target, text: 'Теперь вы будете получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».' })
     if (!test?.ok) {
       return reply(msg.chat.id, msg.message_id, `Не могу написать ID <code>${esc(target)}</code>. Пусть этот человек откроет бота и нажмёт Start, потом повторите.`)
@@ -293,7 +339,7 @@ async function handleCommand(msg: TgMessage, text: string) {
     return reply(msg.chat.id, msg.message_id, `Готово: документы теперь получает ID <code>${esc(target)}</code>.`)
   }
   if (cmd === '/link' || cmd === '/unlink') {
-    if (!isAdmin) return reply(msg.chat.id, msg.message_id, 'Эта команда только для администратора Freshline.')
+    if (isPrivate) return reply(msg.chat.id, msg.message_id, 'Эту команду нужно отправить в группе клиента, куда добавлен бот.')
     if (cmd === '/unlink') {
       await admin.from('telegram_chats').delete().eq('chat_id', msg.chat.id)
       return reply(msg.chat.id, msg.message_id, 'Группа отвязана. Заказы отсюда больше не принимаются.')
@@ -331,12 +377,8 @@ async function handleOrder(msg: TgMessage, text: string) {
   if (ok.length === 0) return // ordinary chat
 
   const { data: link } = await admin.from('telegram_chats').select('customer_id').eq('chat_id', msg.chat.id).maybeSingle()
-  if (!link) {
-    if (ok.length >= 2) {
-      await reply(msg.chat.id, msg.message_id, 'Эта группа ещё не привязана к клиенту, поэтому заказ не оформлен. Администратор, отправьте: /link логин_клиента')
-    }
-    return
-  }
+  // A group nobody linked (someone added the bot on their own) gets no answer.
+  if (!link) return
 
   const unknown = lines.filter((l) => !l.product && l.qty)
   // Only a clear product name without a number — not section headings like "🌾 Un mahsulotlari".
