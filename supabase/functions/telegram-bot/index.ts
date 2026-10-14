@@ -386,7 +386,8 @@ Deno.serve(async (req) => {
         secret_token: WEBHOOK_SECRET,
         allowed_updates: ['message', 'callback_query'],
       })
-      return json(result)
+      const info = await telegram('getWebhookInfo', {})
+      return json({ setWebhook: result, allowed_updates: info?.result?.allowed_updates ?? null, pending: info?.result?.pending_update_count ?? null })
     }
 
     // Calls from the database itself (migration 0064): a new order placed in
