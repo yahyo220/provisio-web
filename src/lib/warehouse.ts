@@ -51,6 +51,11 @@ export const STOCK_STATE_LABELS: Record<StockState, string> = {
  * every Excel report says the numbers are test data. */
 export const WAREHOUSE_IS_DEMO = true
 
+/** Whether the demo fills the warehouse with made-up receipts, stock and
+ * write-offs. Off: every product starts at zero, and the page holds only
+ * what's posted on it (still until a reload, while WAREHOUSE_IS_DEMO). */
+export const WAREHOUSE_DEMO_STOCK = false
+
 /** A batch counts as "expiring soon" this many days ahead. */
 export const EXPIRY_SOON_DAYS = 3
 
@@ -471,6 +476,7 @@ export function createDemoWarehouse(products: ProductRow[], orderNumbers: number
     }
     const minStock = roundQty(weighed ? 10 + rnd() * 40 : 6 + rnd() * 30, weighed)
     settings[p.id] = { productId: p.id, baseUnit: p.unit, minStock, tracksExpiry, shelfLifeDays: shelf, unitSize }
+    if (!WAREHOUSE_DEMO_STOCK) continue
 
     // 1–3 receipts over the last month.
     const receiptCount = 1 + Math.floor(rnd() * 3)
