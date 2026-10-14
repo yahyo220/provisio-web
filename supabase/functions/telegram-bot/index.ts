@@ -35,10 +35,17 @@ const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET')
 // Set from Telegram with /docs (telegram_settings, migration 0068); the
 // secret is only the fallback.
 const DOCS_CHAT_ID_FALLBACK = Deno.env.get('TELEGRAM_DOCS_CHAT_ID')
-async function docsChatId(): Promise<string | undefined> {
+/** Everyone who gets the order documents (telegram_settings.docs_chat_id, comma-separated). */
+async function docsChatIds(): Promise<string[]> {
   const { data } = await admin.from('telegram_settings').select('value').eq('key', 'docs_chat_id').maybeSingle()
-  return data?.value || DOCS_CHAT_ID_FALLBACK
+  return (data?.value || DOCS_CHAT_ID_FALLBACK || '').split(',').map((v: string) => v.trim()).filter(Boolean)
 }
+
+async function saveDocsChatIds(ids: string[]) {
+  await admin.from('telegram_settings').upsert({ key: 'docs_chat_id', value: [...new Set(ids)].join(','), updated_at: new Date().toISOString() })
+}
+
+const WELCOME_DOCS = 'Теперь вы будете получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».'
 // Shared with send-push: the database's own calls (new app order, daily
 // summary from pg_cron) carry it as x-webhook-secret — see migration 0064.
 const DB_SECRET = Deno.env.get('WEBHOOK_SECRET')
@@ -46,7 +53,7 @@ const ADMIN_IDS = new Set((Deno.env.get('TELEGRAM_ADMIN_IDS') ?? '').split(',').
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
-const DOCS_HELP = '/docs — выбрать, кто получает документы заказов (человек должен один раз нажать Start в этом боте)'
+const DOCS_HELP = '/docs — кто получает документы заказов: несколько человек (каждый один раз нажимает Start в боте) или группа для документов'
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -84,8 +91,8 @@ async function sendFile(chatId: string, bytes: Uint8Array, filename: string, cap
 
 /** The order's накладная (the website's order Excel), to the documents recipient. */
 async function sendOrderDocument(orderId: string) {
-  const DOCS_CHAT_ID = await docsChatId()
-  if (!DOCS_CHAT_ID) return console.error('TELEGRAM_DOCS_CHAT_ID not set — no document sent')
+  const recipients = await docsChatIds()
+  if (!recipients.length) return console.error('no documents recipient set — no document sent')
   const { data: o } = await admin
     .from('orders')
     .select('id, order_number, company_order_number, created_at, source, customer_id, company_id, order_items(name, qty, unit, products(name, category))')
@@ -115,14 +122,14 @@ async function sendOrderDocument(orderId: string) {
     lines,
   })
   const via = o.source === 'telegram' ? 'Telegram' : 'приложение'
-  await sendFile(DOCS_CHAT_ID, file, `Накладная ${companyName} №${number}.xlsx`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз.`)
+  for (const to of recipients) await sendFile(to, file, `Накладная ${companyName} №${number}.xlsx`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз.`)
 }
 
 /** 03:00 Tashkent: each order placed since 17:00 the evening before — its
  * накладная, then "Товары по заказам" for all of them added up. */
 async function sendNightBatch(soFar = false) {
-  const DOCS_CHAT_ID = await docsChatId()
-  if (!DOCS_CHAT_ID) return console.error('TELEGRAM_DOCS_CHAT_ID not set — nothing sent')
+  const recipients = await docsChatIds()
+  if (!recipients.length) return console.error('no documents recipient set — nothing sent')
   // Tashkent is UTC+5 all year: 03:00 there is 22:00 UTC, 17:00 is 12:00 UTC.
   // soFar: tonight's window up to this moment (sent on request, not by cron).
   let start: Date
@@ -150,7 +157,7 @@ async function sendNightBatch(soFar = false) {
     .lt('created_at', end.toISOString())
     .order('created_at')
   if (!orders?.length) {
-    await telegram('sendMessage', { chat_id: DOCS_CHAT_ID, text: `Заказов с ${period} не было.` })
+    for (const to of recipients) await telegram('sendMessage', { chat_id: to, text: `Заказов с ${period} не было.` })
     return
   }
   for (const o of orders) await sendOrderDocument(o.id).catch((err) => console.error('order document', o.id, err))
@@ -172,21 +179,21 @@ async function sendNightBatch(soFar = false) {
   const list = orders.map((o) => `${nameOf.get(o.company_id ?? o.customer_id) ?? 'Клиент'} №${o.company_order_number ?? o.order_number}`).join(', ')
   const day = end.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
   const file = await summaryXlsx('Товары по заказам — нужно списать', `${period} · заказов: ${orders.length} (${list})`, [...rows.values()])
-  await sendFile(DOCS_CHAT_ID, file, `Товары по заказам ${day}.xlsx`, `Товары по заказам, ${period}: ${rows.size} поз. из ${orders.length} заказов`)
+  for (const to of recipients) await sendFile(to, file, `Товары по заказам ${day}.xlsx`, `Товары по заказам, ${period}: ${rows.size} поз. из ${orders.length} заказов`)
 }
 
 /** A labelled example of both documents, built from real catalog products —
  * so the recipient can see what will arrive at 03:00. */
 async function sendSample() {
-  const DOCS_CHAT_ID = await docsChatId()
-  if (!DOCS_CHAT_ID) return
+  const recipients = await docsChatIds()
+  if (!recipients.length) return
   const { data: products } = await admin.from('products').select('name, category, unit').eq('active', true).in('category', ['Fruits', 'Vegetables', 'Herbs', 'Dairy']).limit(40)
   const pick = (products ?? []).filter((_, i) => i % 5 === 0).slice(0, 7)
   const lines = pick.map((p, i) => ({ name: p.name.trim(), category: p.category, qty: [10, 2, 5, 1.5, 3, 4, 2][i] ?? 1, unit: UNIT_RU[p.unit] ?? p.unit }))
   const order = await orderXlsx({ number: 1, company: 'ПРИМЕР — Компания', createdAt: new Date().toISOString(), staffRole: 'Повар', contact: 'Иван', phone: '+998 90 000 00 00', lines })
-  await sendFile(DOCS_CHAT_ID, order, 'ПРИМЕР накладной.xlsx', 'Пример: так будет выглядеть накладная каждого заказа (17:00–03:00).')
+  for (const to of recipients) await sendFile(to, order, 'ПРИМЕР накладной.xlsx', 'Пример: так будет выглядеть накладная каждого заказа (17:00–03:00).')
   const summary = await summaryXlsx('Товары по заказам — нужно списать', 'ПРИМЕР · заказов: 1 (ПРИМЕР — Компания №1)', lines.map((l) => ({ ...l, total: l.qty })))
-  await sendFile(DOCS_CHAT_ID, summary, 'ПРИМЕР товары по заказам.xlsx', 'Пример: общий список, придёт в 03:00 вместе с накладными.')
+  for (const to of recipients) await sendFile(to, summary, 'ПРИМЕР товары по заказам.xlsx', 'Пример: общий список, придёт в 03:00 вместе с накладными.')
 }
 
 function formatQty(n: number) {
@@ -215,19 +222,20 @@ async function rememberUser(u: TgUser) {
   await admin.from('telegram_users').upsert({ id: u.id, name: fullName(u), username: u.username ?? null, last_seen: new Date().toISOString() })
 }
 
-/** /docs: the current recipient and a button for each person who opened the bot. */
-async function showDocsPicker(chatId: number, replyTo: number) {
-  const current = await docsChatId()
-  const { data: users } = await admin.from('telegram_users').select('id, name, username').order('last_seen', { ascending: false }).limit(20)
-  const currentName = users?.find((u) => String(u.id) === current)?.name ?? (current ? `ID ${current}` : 'никто')
-  const buttons = (users ?? []).map((u) => [{ text: `${String(u.id) === current ? '✅ ' : ''}${u.name}${u.username ? ` (@${u.username})` : ''}`, callback_data: `docs:${u.id}` }])
-  return telegram('sendMessage', {
-    chat_id: chatId,
-    reply_to_message_id: replyTo,
-    allow_sending_without_reply: true,
-    text: `Документы заказов сейчас получает: ${currentName}.\n\nКому присылать? Нажмите на человека. Если нужного нет в списке, пусть он откроет этого бота и нажмёт Start, потом снова отправьте /docs.`,
-    reply_markup: { inline_keyboard: buttons },
-  })
+/** /docs: everyone who opened the bot, ✅ = gets the documents; a tap adds or removes. */
+async function showDocsPicker(chatId: number, replyTo?: number, editMessageId?: number) {
+  const current = new Set(await docsChatIds())
+  const { data: users } = await admin.from('telegram_users').select('id, name, username').order('last_seen', { ascending: false }).limit(30)
+  const buttons = (users ?? []).map((u) => [{ text: `${current.has(String(u.id)) ? '✅' : '⬜️'} ${u.name}${u.username ? ` (@${u.username})` : ''}`, callback_data: `docs:${u.id}` }])
+  // Documents groups (chat ids below zero) aren't people, so they come from getChat.
+  for (const id of current) {
+    if (!id.startsWith('-')) continue
+    const { result } = await telegram('getChat', { chat_id: id })
+    buttons.unshift([{ text: `✅ 👥 Группа «${result?.title ?? id}»`, callback_data: `docs:${id}` }])
+  }
+  const text = `Кто получает документы заказов (каждую ночь в 03:00)? ✅ — получает. Нажмите, чтобы добавить или убрать — можно несколько.\n\nЧеловек должен один раз нажать Start в этом боте. Без этого — создайте группу, добавьте туда людей и бота и выберите «📄 Это группа для документов заказов».`
+  if (editMessageId) return telegram('editMessageText', { chat_id: chatId, message_id: editMessageId, text, reply_markup: { inline_keyboard: buttons } })
+  return telegram('sendMessage', { chat_id: chatId, reply_to_message_id: replyTo, allow_sending_without_reply: true, text, reply_markup: { inline_keyboard: buttons } })
 }
 
 interface TgCallback {
@@ -267,14 +275,20 @@ async function handleCallback(cb: TgCallback) {
   if (!cb.data?.startsWith('docs:')) return answer('')
   if (!(await isBotAdmin(cb.from.id))) return answer('Только для администратора Freshline.')
   const target = cb.data.slice(5)
+  const ids = await docsChatIds()
   const { data: user } = await admin.from('telegram_users').select('name').eq('id', target).maybeSingle()
-  const test = await telegram('sendMessage', { chat_id: target, text: 'Теперь вы будете получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».' })
-  if (!test?.ok) return answer('Не могу написать этому человеку — пусть снова нажмёт Start в боте.')
-  await admin.from('telegram_settings').upsert({ key: 'docs_chat_id', value: target, updated_at: new Date().toISOString() })
-  await answer('Готово')
-  if (cb.message) {
-    await telegram('editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text: `Готово: документы заказов теперь получает ${user?.name ?? `ID ${target}`}.` })
+  const name = user?.name ?? (target.startsWith('-') ? 'Группа' : `ID ${target}`)
+  if (ids.includes(target)) {
+    await saveDocsChatIds(ids.filter((id) => id !== target))
+    await answer(`${name} больше не получает документы`)
+  } else {
+    // Make sure the bot can actually write to them first.
+    const test = await telegram('sendMessage', { chat_id: target, text: WELCOME_DOCS })
+    if (!test?.ok) return answer('Не могу написать этому человеку — пусть снова нажмёт Start в боте.')
+    await saveDocsChatIds([...ids, target])
+    await answer(`${name} теперь получает документы`)
   }
+  if (cb.message) await showDocsPicker(cb.message.chat.id, undefined, cb.message.message_id)
 }
 
 /** The owner (TELEGRAM_ADMIN_IDS) or someone the owner allowed with /admins. */
@@ -344,12 +358,12 @@ async function handleCommand(msg: TgMessage, text: string) {
     // Plain /docs shows the buttons; "/docs 123456789" and /docs_me still work.
     const target = cmd === '/docs' ? args[0]?.replace(/[^\d-]/g, '') : String(msg.from!.id)
     if (!target) return showDocsPicker(msg.chat.id, msg.message_id)
-    const test = await telegram('sendMessage', { chat_id: target, text: 'Теперь вы будете получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».' })
+    const test = await telegram('sendMessage', { chat_id: target, text: WELCOME_DOCS })
     if (!test?.ok) {
       return reply(msg.chat.id, msg.message_id, `Не могу написать ID <code>${esc(target)}</code>. Пусть этот человек откроет бота и нажмёт Start, потом повторите.`)
     }
-    await admin.from('telegram_settings').upsert({ key: 'docs_chat_id', value: target, updated_at: new Date().toISOString() })
-    return reply(msg.chat.id, msg.message_id, `Готово: документы теперь получает ID <code>${esc(target)}</code>.`)
+    await saveDocsChatIds([...(await docsChatIds()), target])
+    return reply(msg.chat.id, msg.message_id, `Готово: ID <code>${esc(target)}</code> добавлен к получателям документов.`)
   }
 }
 
@@ -364,6 +378,8 @@ async function loadCatalog() {
 }
 
 async function handleOrder(msg: TgMessage, text: string) {
+  // The documents group is for reading, not ordering.
+  if ((await docsChatIds()).includes(String(msg.chat.id))) return
   const lines = parseOrderText(text, await loadCatalog())
   if (!lines.some((l) => l.product && l.qty)) return // ordinary chat
 
@@ -443,6 +459,8 @@ async function askWhichClient(chatId: number, title: string, justAdded = false, 
   const t = title.toLowerCase()
   const list = (clients ?? []).sort((a, b) => Number(t.includes(label(b).toLowerCase())) - Number(t.includes(label(a).toLowerCase())))
   const rows: { text: string; callback_data: string }[][] = []
+  // A group made just for the order documents (anyone can be added to it — no Start needed).
+  rows.push([{ text: '📄 Это группа для документов заказов', callback_data: `cl:${chatId}:docs` }])
   for (let i = 0; i < list.length; i += 2) rows.push(list.slice(i, i + 2).map((c) => ({ text: label(c), callback_data: `cl:${chatId}:${c.id}` })))
   if (onlyTo) rows.push([{ text: '⛓️‍💥 Отвязать группу (заказы не принимаются)', callback_data: `cl:${chatId}:unlink` }])
   rows.push([{ text: '🚫 Не принимать заказы из этой группы', callback_data: `cl:${chatId}:ignore` }])
@@ -467,6 +485,12 @@ async function linkFromButton(cb: TgCallback, chatId: number, customerId: string
   const edit = (text: string) =>
     cb.message ? telegram('editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text }) : Promise.resolve()
 
+  if (customerId === 'docs') {
+    await admin.from('telegram_chats').delete().eq('chat_id', chatId)
+    await saveDocsChatIds([...(await docsChatIds()), String(chatId)])
+    await telegram('sendMessage', { chat_id: chatId, text: 'Эта группа будет получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».' })
+    return edit(`Готово: группа «${title}» получает документы заказов. Заказы из неё не принимаются. Убрать — в /docs.`)
+  }
   if (customerId === 'unlink') {
     await admin.from('telegram_chats').delete().eq('chat_id', chatId)
     await admin.from('telegram_settings').delete().eq('key', `asked:${chatId}`)
