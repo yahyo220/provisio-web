@@ -90,8 +90,8 @@ async function sendFile(chatId: string, bytes: Uint8Array, filename: string, cap
 }
 
 /** The order's накладная (the website's order Excel), to the documents recipient. */
-async function sendOrderDocument(orderId: string) {
-  const recipients = await docsChatIds()
+async function sendOrderDocument(orderId: string, to?: string[]) {
+  const recipients = to ?? (await docsChatIds())
   if (!recipients.length) return console.error('no documents recipient set — no document sent')
   const { data: o } = await admin
     .from('orders')
@@ -127,14 +127,18 @@ async function sendOrderDocument(orderId: string) {
 
 /** 03:00 Tashkent: each order placed since 17:00 the evening before — its
  * накладная, then "Товары по заказам" for all of them added up. */
-async function sendNightBatch(soFar = false) {
-  const recipients = await docsChatIds()
+async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: string[]) {
+  const recipients = to ?? (await docsChatIds())
   if (!recipients.length) return console.error('no documents recipient set — nothing sent')
   // Tashkent is UTC+5 all year: 03:00 there is 22:00 UTC, 17:00 is 12:00 UTC.
-  // soFar: tonight's window up to this moment (sent on request, not by cron).
+  // soFar: tonight's window up to this moment; open: every order not yet
+  // delivered, whenever placed (both sent on request, not by cron).
   let start: Date
   let end: Date
-  if (soFar) {
+  if (mode === 'open') {
+    end = new Date()
+    start = new Date(0)
+  } else if (mode === 'soFar') {
     end = new Date()
     start = new Date(end)
     start.setUTCHours(12, 0, 0, 0)
@@ -147,20 +151,21 @@ async function sendNightBatch(soFar = false) {
     start = new Date(end.getTime() - 10 * 3600 * 1000)
   }
   const fmt = (d: Date) => d.toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-  const period = `${fmt(start)} – ${fmt(end)}`
+  const period = mode === 'open' ? `текущие заказы на ${fmt(end)}` : `${fmt(start)} – ${fmt(end)}`
 
-  const { data: orders } = await admin
+  let query = admin
     .from('orders')
     .select('id, order_number, company_order_number, company_id, customer_id, order_items(product_id, name, qty, unit, products(name, category))')
     .neq('status', 'cancelled')
     .gte('created_at', start.toISOString())
     .lt('created_at', end.toISOString())
-    .order('created_at')
+  if (mode === 'open') query = query.neq('status', 'delivered')
+  const { data: orders } = await query.order('created_at')
   if (!orders?.length) {
-    for (const to of recipients) await telegram('sendMessage', { chat_id: to, text: `Заказов с ${period} не было.` })
+    for (const r of recipients) await telegram('sendMessage', { chat_id: r, text: mode === 'open' ? 'Текущих заказов нет.' : `Заказов с ${period} не было.` })
     return
   }
-  for (const o of orders) await sendOrderDocument(o.id).catch((err) => console.error('order document', o.id, err))
+  for (const o of orders) await sendOrderDocument(o.id, recipients).catch((err) => console.error('order document', o.id, err))
   const rows = new Map<string, XlsxSummaryRow>()
   for (const o of orders) {
     // deno-lint-ignore no-explicit-any
@@ -541,8 +546,18 @@ Deno.serve(async (req) => {
       const body = await req.json()
       // Answer the database right away; building and sending the PDFs keeps
       // running in the background (pg_net gives up waiting after seconds).
+      // `to` (optional): send only to these chats instead of every documents recipient.
+      const to = Array.isArray(body.to) ? body.to.map(String) : undefined
       const work =
-        body.kind === 'daily' ? sendNightBatch() : body.kind === 'now' ? sendNightBatch(true) : body.kind === 'sample' ? sendSample() : Promise.resolve()
+        body.kind === 'daily'
+          ? sendNightBatch('night', to)
+          : body.kind === 'now'
+            ? sendNightBatch('soFar', to)
+            : body.kind === 'open'
+              ? sendNightBatch('open', to)
+              : body.kind === 'sample'
+                ? sendSample()
+                : Promise.resolve()
       const done = work.catch((err) => console.error(body.kind, err))
       // deno-lint-ignore no-explicit-any
       const runtime = (globalThis as any).EdgeRuntime
