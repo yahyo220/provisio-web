@@ -389,7 +389,8 @@ async function handleOrder(msg: TgMessage, text: string) {
   // A group nobody linked yet: the order is placed right away without a
   // client, and the admins pick the client with a button afterwards.
   const placed = await placeFromText(msg.chat.id, msg.message_id, text, msg.chat.title ?? 'без названия')
-  if (placed && !placed.merged) await askWhichClient(msg.chat.id, msg.chat.title ?? 'без названия')
+  // Normally the admins were already asked when the bot joined the group.
+  if (placed && !placed.merged && !(await alreadyAsked(msg.chat.id))) await askWhichClient(msg.chat.id, msg.chat.title ?? 'без названия')
 }
 
 /** Turns one message into an order (or a follow-up) for the group's client and answers in the group. */
@@ -438,8 +439,14 @@ async function adminChatIds(): Promise<string[]> {
   return [...new Set([...ADMIN_IDS, ...(data ?? []).map((u) => String(u.id))])]
 }
 
+async function alreadyAsked(chatId: number) {
+  const { data } = await admin.from('telegram_settings').select('key').eq('key', `asked:${chatId}`).maybeSingle()
+  return !!data
+}
+
 /** Private message to the admins: "New group — whose client is it?" with a button per client. */
-async function askWhichClient(chatId: number, title: string) {
+async function askWhichClient(chatId: number, title: string, justAdded = false) {
+  await admin.from('telegram_settings').upsert({ key: `asked:${chatId}`, value: title, updated_at: new Date().toISOString() })
   const { data: clients } = await admin
     .from('customers')
     .select('id, name, company_name')
@@ -457,7 +464,9 @@ async function askWhichClient(chatId: number, title: string) {
   for (const id of await adminChatIds()) {
     await telegram('sendMessage', {
       chat_id: id,
-      text: `Новая группа «${title}» прислала заказ — он уже на сайте, но без клиента. Чей это клиент? Нажмите — группа привяжется, и заказ перейдёт к нему.`,
+      text: justAdded
+        ? `Бота добавили в группу «${title}». Чей это клиент? Нажмите — и заказы из группы будут оформляться на него.`
+        : `Новая группа «${title}» прислала заказ — он уже на сайте, но без клиента. Чей это клиент? Нажмите — группа привяжется, и заказ перейдёт к нему.`,
       reply_markup: { inline_keyboard: rows },
     })
   }
@@ -483,7 +492,7 @@ async function linkFromButton(cb: TgCallback, chatId: number, customerId: string
     console.error(error)
     return edit('Не получилось привязать группу, попробуйте ещё раз.')
   }
-  return edit(`Готово: группа «${title}» → ${client.company_name || client.name}. Заказов передано клиенту: ${moved ?? 0}.`)
+  return edit(`Готово: группа «${title}» → ${client.company_name || client.name}. ${moved ? `Заказов передано клиенту: ${moved}.` : 'Заказы из группы будут оформляться на него.'}`)
 }
 
 Deno.serve(async (req) => {
@@ -500,7 +509,7 @@ Deno.serve(async (req) => {
       const result = await telegram('setWebhook', {
         url: `${SUPABASE_URL}/functions/v1/telegram-bot`,
         secret_token: WEBHOOK_SECRET,
-        allowed_updates: ['message', 'callback_query'],
+        allowed_updates: ['message', 'callback_query', 'my_chat_member'],
       })
       const info = await telegram('getWebhookInfo', {})
       return json({ setWebhook: result, allowed_updates: info?.result?.allowed_updates ?? null, pending: info?.result?.pending_update_count ?? null })
@@ -529,6 +538,17 @@ Deno.serve(async (req) => {
     }
 
     const update = await req.json()
+    // The bot was added to a group: ask the admins right away whose client it is.
+    const member = update.my_chat_member
+    if (member && ['group', 'supergroup'].includes(member.chat?.type)) {
+      const nowIn = ['member', 'administrator'].includes(member.new_chat_member?.status)
+      const wasIn = ['member', 'administrator'].includes(member.old_chat_member?.status)
+      if (nowIn && !wasIn) {
+        const { data: linked } = await admin.from('telegram_chats').select('chat_id').eq('chat_id', member.chat.id).maybeSingle()
+        if (!linked) await askWhichClient(member.chat.id, member.chat.title ?? 'без названия', true)
+      }
+      return json({ ok: true })
+    }
     if (update.callback_query) {
       await handleCallback(update.callback_query)
       return json({ ok: true })
