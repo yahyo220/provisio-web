@@ -30,7 +30,13 @@ const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET')
 // The one person who gets, every night at 03:00, the накладная of each order
 // placed since 17:00 and the "Товары по заказам" for them.
-const DOCS_CHAT_ID = Deno.env.get('TELEGRAM_DOCS_CHAT_ID')
+// Set from Telegram with /docs (telegram_settings, migration 0068); the
+// secret is only the fallback.
+const DOCS_CHAT_ID_FALLBACK = Deno.env.get('TELEGRAM_DOCS_CHAT_ID')
+async function docsChatId(): Promise<string | undefined> {
+  const { data } = await admin.from('telegram_settings').select('value').eq('key', 'docs_chat_id').maybeSingle()
+  return data?.value || DOCS_CHAT_ID_FALLBACK
+}
 // Shared with send-push: the database's own calls (new app order, daily
 // summary from pg_cron) carry it as x-webhook-secret — see migration 0064.
 const DB_SECRET = Deno.env.get('WEBHOOK_SECRET')
@@ -46,6 +52,15 @@ const HELP = [
   'Петрушка 2 пучка',
   '',
   'Можно по-русски или по-узбекски. Если допишете что-то в течение часа, это добавится в тот же заказ.',
+].join('\n')
+
+const DOCS_HELP = [
+  'Кому приходят документы заказов (каждую ночь в 03:00):',
+  '/docs — показать, кто получает сейчас',
+  '/docs_me — получать мне',
+  '/docs 123456789 — получать человеку с этим ID',
+  '',
+  'Человек должен сначала нажать Start в этом боте и отправить /id — так он узнает свой ID.',
 ].join('\n')
 
 function json(body: unknown, status = 200) {
@@ -84,6 +99,7 @@ async function sendFile(chatId: string, bytes: Uint8Array, filename: string, cap
 
 /** The order's накладная (the website's order Excel), to the documents recipient. */
 async function sendOrderDocument(orderId: string) {
+  const DOCS_CHAT_ID = await docsChatId()
   if (!DOCS_CHAT_ID) return console.error('TELEGRAM_DOCS_CHAT_ID not set — no document sent')
   const { data: o } = await admin
     .from('orders')
@@ -120,6 +136,7 @@ async function sendOrderDocument(orderId: string) {
 /** 03:00 Tashkent: each order placed since 17:00 the evening before — its
  * накладная, then "Товары по заказам" for all of them added up. */
 async function sendNightBatch(soFar = false) {
+  const DOCS_CHAT_ID = await docsChatId()
   if (!DOCS_CHAT_ID) return console.error('TELEGRAM_DOCS_CHAT_ID not set — nothing sent')
   // Tashkent is UTC+5 all year: 03:00 there is 22:00 UTC, 17:00 is 12:00 UTC.
   // soFar: tonight's window up to this moment (sent on request, not by cron).
@@ -176,6 +193,7 @@ async function sendNightBatch(soFar = false) {
 /** A labelled example of both documents, built from real catalog products —
  * so the recipient can see what will arrive at 03:00. */
 async function sendSample() {
+  const DOCS_CHAT_ID = await docsChatId()
   if (!DOCS_CHAT_ID) return
   const { data: products } = await admin.from('products').select('name, category, unit').eq('active', true).in('category', ['Fruits', 'Vegetables', 'Herbs', 'Dairy']).limit(40)
   const pick = (products ?? []).filter((_, i) => i % 5 === 0).slice(0, 7)
@@ -207,7 +225,22 @@ async function handleCommand(msg: TgMessage, text: string) {
     return reply(msg.chat.id, msg.message_id, `ID этого чата: <code>${msg.chat.id}</code>\nВаш ID в Telegram: <code>${msg.from?.id ?? '—'}</code>`)
   }
   if (cmd === '/start' || cmd === '/help') {
-    return reply(msg.chat.id, msg.message_id, esc(HELP))
+    return reply(msg.chat.id, msg.message_id, esc(isAdmin ? `${HELP}\n\nДля администратора:\n/link логин — привязать группу к клиенту\n${DOCS_HELP}` : HELP))
+  }
+  if (cmd === '/docs' || cmd === '/docsme' || cmd === '/docs_me') {
+    if (!isAdmin) return reply(msg.chat.id, msg.message_id, 'Эта команда только для администратора Freshline.')
+    const target = cmd === '/docs' ? args[0]?.replace(/[^\d-]/g, '') : String(msg.from!.id)
+    if (!target) {
+      const current = await docsChatId()
+      return reply(msg.chat.id, msg.message_id, `Сейчас документы получает ID <code>${current ?? 'никто'}</code>.\n\n${esc(DOCS_HELP)}`)
+    }
+    // Check the bot can actually write there before switching.
+    const test = await telegram('sendMessage', { chat_id: target, text: 'Теперь вы будете получать документы заказов Freshline: каждую ночь в 03:00 — накладные заказов с 17:00 и общий список «Товары по заказам».' })
+    if (!test?.ok) {
+      return reply(msg.chat.id, msg.message_id, `Не могу написать ID <code>${esc(target)}</code>. Пусть этот человек откроет бота и нажмёт Start, потом повторите.`)
+    }
+    await admin.from('telegram_settings').upsert({ key: 'docs_chat_id', value: target, updated_at: new Date().toISOString() })
+    return reply(msg.chat.id, msg.message_id, `Готово: документы теперь получает ID <code>${esc(target)}</code>.`)
   }
   if (cmd === '/link' || cmd === '/unlink') {
     if (!isAdmin) return reply(msg.chat.id, msg.message_id, 'Эта команда только для администратора Freshline.')
