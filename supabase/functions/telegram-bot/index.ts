@@ -104,7 +104,7 @@ async function refreshOrderDocument(orderId: string, requestedAt: string) {
   const { data: latest } = await admin.from('telegram_doc_pending').select('order_id').eq('order_id', orderId).eq('requested_at', requestedAt).maybeSingle()
   if (!latest) return // a newer change came in; that request will send it
   const groups = (await docsChatIds()).filter(isGroup)
-  const { data: order } = await admin.from('orders').select('id, status').eq('id', orderId).maybeSingle()
+  const { data: order } = await admin.from('orders').select('id, status, created_at').eq('id', orderId).maybeSingle()
   const { data: previous } = await admin.from('telegram_doc_messages').select('chat_id, message_id').eq('order_id', orderId)
   for (const m of previous ?? []) await telegram('deleteMessage', { chat_id: m.chat_id, message_id: m.message_id })
   await admin.from('telegram_doc_messages').delete().eq('order_id', orderId)
@@ -114,6 +114,9 @@ async function refreshOrderDocument(orderId: string, requestedAt: string) {
     if (rows.length) await admin.from('telegram_doc_messages').upsert(rows)
   }
   await admin.from('telegram_doc_pending').delete().eq('order_id', orderId).eq('requested_at', requestedAt)
+  // The night's live summary changes with it (a deleted order: the current window).
+  const window = order ? windowOf(new Date(order.created_at)) : currentWindow()
+  if (window && groups.length) await refreshSummary(window)
 }
 
 /** The order's накладная (the website's order Excel), to the documents recipient. */
@@ -173,49 +176,38 @@ function catalogPrice(p: any, unit: string): number | null {
   return extra ? Number(extra.price) : null
 }
 
-/** 03:00 Tashkent: each order placed since 17:00 the evening before — its
- * накладная, then "Товары по заказам" for all of them added up. */
-async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: string[]) {
-  const recipients = to ?? (await docsChatIds())
-  if (!recipients.length) return console.error('no documents recipient set — nothing sent')
-  // Tashkent is UTC+5 all year: 03:00 there is 22:00 UTC, 17:00 is 12:00 UTC.
-  // soFar: tonight's window up to this moment; open: every order not yet
-  // delivered, whenever placed (both sent on request, not by cron).
-  let start: Date
-  let end: Date
-  if (mode === 'open') {
-    end = new Date()
-    start = new Date(0)
-  } else if (mode === 'soFar') {
-    end = new Date()
-    start = new Date(end)
-    start.setUTCHours(12, 0, 0, 0)
-    if (start > end) start.setUTCDate(start.getUTCDate() - 1)
-  } else {
-    end = new Date()
-    end.setUTCMinutes(0, 0, 0)
-    if (end.getUTCHours() < 22) end.setUTCDate(end.getUTCDate() - 1)
-    end.setUTCHours(22)
-    start = new Date(end.getTime() - 10 * 3600 * 1000)
-  }
-  const fmt = (d: Date) => d.toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-  const period = mode === 'open' ? `текущие заказы на ${fmt(end)}` : `${fmt(start)} – ${fmt(end)}`
+// Tashkent is UTC+5 all year: the night window 17:00–03:00 there is
+// 12:00–22:00 UTC of the same UTC day.
+const fmtTashkent = (d: Date) => d.toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 
+/** The night window an order belongs to (its 12:00 UTC start), or null for a daytime order. */
+function windowOf(createdAt: Date): Date | null {
+  const h = createdAt.getUTCHours()
+  if (h < 12 || h >= 22) return null
+  const start = new Date(createdAt)
+  start.setUTCHours(12, 0, 0, 0)
+  return start
+}
+
+/** The window running now, or the one that ended at the last 03:00. */
+function currentWindow(now = new Date()): Date {
+  const start = new Date(now)
+  start.setUTCHours(12, 0, 0, 0)
+  if (now.getUTCHours() < 12) start.setUTCDate(start.getUTCDate() - 1)
+  return start
+}
+
+/** "Товары по заказам" for the orders placed in [start, end): every product added up. */
+async function buildSummary(start: Date, end: Date, period: string, onlyOpen = false) {
   let query = admin
     .from('orders')
     .select('id, order_number, company_order_number, company_id, customer_id, order_items(product_id, name, qty, unit, products(name, category, unit, price, unit_prices))')
     .neq('status', 'cancelled')
     .gte('created_at', start.toISOString())
     .lt('created_at', end.toISOString())
-  if (mode === 'open') query = query.neq('status', 'delivered')
+  if (onlyOpen) query = query.neq('status', 'delivered')
   const { data: orders } = await query.order('created_at')
-  if (!orders?.length) {
-    for (const r of recipients) await telegram('sendMessage', { chat_id: r, text: mode === 'open' ? 'Текущих заказов нет.' : `Заказов с ${period} не было.` })
-    return
-  }
-  // At night the documents groups already hold every накладная (sent live), so they only get the summary.
-  const forOrders = mode === 'night' && !to ? recipients.filter((r) => !isGroup(r)) : recipients
-  if (forOrders.length) for (const o of orders) await sendOrderDocument(o.id, forOrders).catch((err) => console.error('order document', o.id, err))
+  if (!orders?.length) return null
   const rows = new Map<string, XlsxSummaryRow>()
   for (const o of orders) {
     // deno-lint-ignore no-explicit-any
@@ -232,9 +224,82 @@ async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: s
   const { data: companies } = await admin.from('customers').select('id, name, company_name').in('id', ids)
   const nameOf = new Map((companies ?? []).map((c) => [c.id, c.company_name || c.name]))
   const list = orders.map((o) => `${nameOf.get(o.company_id ?? o.customer_id) ?? 'Клиент'} №${o.company_order_number ?? o.order_number}`).join(', ')
-  const day = end.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
   const file = await summaryXlsx('Товары по заказам — нужно списать', `${period} · заказов: ${orders.length} (${list})`, [...rows.values()])
-  for (const to of recipients) await sendFile(to, file, `Товары по заказам ${day}.xlsx`, `Товары по заказам, ${period}: ${rows.size} поз. из ${orders.length} заказов`)
+  return { orders, file, positions: rows.size }
+}
+
+/** Replaces the documents groups' live "Товары по заказам" for one night
+ * window with the current one (final=true at 03:00). Waits a moment so a
+ * burst of changes ends in one message. */
+async function refreshSummary(windowStart: Date, final = false) {
+  const key = windowStart.toISOString()
+  const mine = new Date().toISOString()
+  await admin.from('telegram_summary_pending').upsert({ window_start: key, requested_at: mine })
+  if (!final) {
+    await sleep(5000)
+    const { data: latest } = await admin.from('telegram_summary_pending').select('window_start').eq('window_start', key).eq('requested_at', mine).maybeSingle()
+    if (!latest) return // a newer refresh will send it
+  }
+  const groups = (await docsChatIds()).filter(isGroup)
+  const end = new Date(windowStart.getTime() + 10 * 3600 * 1000)
+  const period = `${fmtTashkent(windowStart)} – ${fmtTashkent(end)}`
+  const summary = await buildSummary(windowStart, end, period)
+  const { data: previous } = await admin.from('telegram_summary_messages').select('chat_id, message_id').eq('window_start', key)
+  for (const m of previous ?? []) await telegram('deleteMessage', { chat_id: m.chat_id, message_id: m.message_id })
+  await admin.from('telegram_summary_messages').delete().eq('window_start', key)
+  if (summary && groups.length) {
+    const day = end.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
+    const caption = final
+      ? `✅ Итог за ночь — Товары по заказам, ${period}: ${summary.positions} поз. из ${summary.orders.length} заказов`
+      : `🔄 Товары по заказам, ${period} (обновляется с каждым заказом): ${summary.positions} поз. из ${summary.orders.length} заказов`
+    const rows: { window_start: string; chat_id: number; message_id: number }[] = []
+    for (const g of groups) {
+      const id = await sendFile(g, summary.file, `Товары по заказам ${day}.xlsx`, caption)
+      if (id != null) rows.push({ window_start: key, chat_id: Number(g), message_id: id })
+    }
+    if (rows.length) await admin.from('telegram_summary_messages').upsert(rows)
+  } else if (final && groups.length) {
+    for (const g of groups) await telegram('sendMessage', { chat_id: g, text: `Заказов с ${period} не было.` })
+  }
+  await admin.from('telegram_summary_pending').delete().eq('window_start', key).eq('requested_at', mine)
+}
+
+/** 03:00 Tashkent: each order placed since 17:00 the evening before — its
+ * накладная, then "Товары по заказам" for all of them added up. The
+ * documents groups already have every накладная and a live summary, so for
+ * them the summary is just replaced by the final one. */
+async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: string[]) {
+  let recipients = to ?? (await docsChatIds())
+  if (!recipients.length) return console.error('no documents recipient set — nothing sent')
+  // soFar: tonight's window up to this moment; open: every order not yet
+  // delivered, whenever placed (both sent on request, not by cron).
+  let start: Date
+  let end: Date
+  if (mode === 'open') {
+    end = new Date()
+    start = new Date(0)
+  } else if (mode === 'soFar') {
+    end = new Date()
+    start = currentWindow(end)
+  } else {
+    start = currentWindow()
+    if (new Date().getUTCHours() >= 12 && new Date().getUTCHours() < 22) start.setUTCDate(start.getUTCDate() - 1)
+    end = new Date(start.getTime() + 10 * 3600 * 1000)
+    if (!to) {
+      await refreshSummary(start, true)
+      recipients = recipients.filter((r) => !isGroup(r))
+      if (!recipients.length) return
+    }
+  }
+  const period = mode === 'open' ? `текущие заказы на ${fmtTashkent(end)}` : `${fmtTashkent(start)} – ${fmtTashkent(end)}`
+  const summary = await buildSummary(start, end, period, mode === 'open')
+  if (!summary) {
+    for (const r of recipients) await telegram('sendMessage', { chat_id: r, text: mode === 'open' ? 'Текущих заказов нет.' : `Заказов с ${period} не было.` })
+    return
+  }
+  for (const o of summary.orders) await sendOrderDocument(o.id, recipients).catch((err) => console.error('order document', o.id, err))
+  const day = end.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
+  for (const r of recipients) await sendFile(r, summary.file, `Товары по заказам ${day}.xlsx`, `Товары по заказам, ${period}: ${summary.positions} поз. из ${summary.orders.length} заказов`)
 }
 
 /** A labelled example of both documents, built from real catalog products —
