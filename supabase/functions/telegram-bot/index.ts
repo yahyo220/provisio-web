@@ -80,25 +80,56 @@ function reply(chatId: number, messageId: number, text: string) {
 
 const UNIT_RU: Record<string, string> = { kg: 'кг', piece: 'шт.', box: 'коробка', bottle: 'бутылка', package: 'упаковка', bunch: 'пучок', bag: 'мешок', pack: 'уп.', gram: 'грамм' }
 
-async function sendFile(chatId: string, bytes: Uint8Array, filename: string, caption: string) {
+/** Sends an Excel file; returns the Telegram message id (null if it failed). */
+async function sendFile(chatId: string, bytes: Uint8Array, filename: string, caption: string): Promise<number | null> {
   const form = new FormData()
   form.append('chat_id', chatId)
   form.append('caption', caption)
   form.append('document', new Blob([new Uint8Array(bytes)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename)
   const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, { method: 'POST', body: form })
-  if (!res.ok) console.error('sendDocument', res.status, await res.text())
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) console.error('sendDocument', res.status, JSON.stringify(data))
+  return data?.result?.message_id ?? null
+}
+
+const isGroup = (chatId: string) => chatId.startsWith('-')
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Keeps the documents group's накладная of one order current: waits a moment
+ * (one website save is several changes), and if this is still the newest
+ * request, deletes the previous file and sends the order as it is now —
+ * or just deletes it when the order was cancelled or deleted. */
+async function refreshOrderDocument(orderId: string, requestedAt: string) {
+  await sleep(8000)
+  const { data: latest } = await admin.from('telegram_doc_pending').select('order_id').eq('order_id', orderId).eq('requested_at', requestedAt).maybeSingle()
+  if (!latest) return // a newer change came in; that request will send it
+  const groups = (await docsChatIds()).filter(isGroup)
+  const { data: order } = await admin.from('orders').select('id, status').eq('id', orderId).maybeSingle()
+  const { data: previous } = await admin.from('telegram_doc_messages').select('chat_id, message_id').eq('order_id', orderId)
+  for (const m of previous ?? []) await telegram('deleteMessage', { chat_id: m.chat_id, message_id: m.message_id })
+  await admin.from('telegram_doc_messages').delete().eq('order_id', orderId)
+  if (order && order.status !== 'cancelled' && groups.length) {
+    const sent = await sendOrderDocument(orderId, groups, (previous ?? []).length > 0)
+    const rows = [...sent].map(([chat, message]) => ({ order_id: orderId, chat_id: Number(chat), message_id: message }))
+    if (rows.length) await admin.from('telegram_doc_messages').upsert(rows)
+  }
+  await admin.from('telegram_doc_pending').delete().eq('order_id', orderId).eq('requested_at', requestedAt)
 }
 
 /** The order's накладная (the website's order Excel), to the documents recipient. */
-async function sendOrderDocument(orderId: string, to?: string[]) {
+async function sendOrderDocument(orderId: string, to?: string[], updated = false): Promise<Map<string, number>> {
+  const sent = new Map<string, number>()
   const recipients = to ?? (await docsChatIds())
-  if (!recipients.length) return console.error('no documents recipient set — no document sent')
+  if (!recipients.length) {
+    console.error('no documents recipient set — no document sent')
+    return sent
+  }
   const { data: o } = await admin
     .from('orders')
     .select('id, order_number, company_order_number, created_at, source, customer_id, company_id, order_items(name, qty, unit, products(name, category))')
     .eq('id', orderId)
     .maybeSingle()
-  if (!o) return
+  if (!o) return sent
   const ids = [o.customer_id, o.company_id].filter(Boolean)
   const { data: people } = await admin.from('customers').select('id, name, company_name, staff_role, contact, phone').in('id', ids)
   const person = people?.find((c) => c.id === o.customer_id)
@@ -122,7 +153,12 @@ async function sendOrderDocument(orderId: string, to?: string[]) {
     lines,
   })
   const via = o.source === 'telegram' ? 'Telegram' : 'приложение'
-  for (const to of recipients) await sendFile(to, file, `Накладная ${companyName} №${number}.xlsx`, `Заказ ${companyName} №${number} (${via}) — ${lines.length} поз.`)
+  const caption = `${updated ? '🔄 Обновлено. ' : ''}Заказ ${companyName} №${number} (${via}) — ${lines.length} поз.`
+  for (const to of recipients) {
+    const id = await sendFile(to, file, `Накладная ${companyName} №${number}.xlsx`, caption)
+    if (id != null) sent.set(to, id)
+  }
+  return sent
 }
 
 /** The catalog's price for the unit that was ordered — the main unit, one of
@@ -177,7 +213,9 @@ async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: s
     for (const r of recipients) await telegram('sendMessage', { chat_id: r, text: mode === 'open' ? 'Текущих заказов нет.' : `Заказов с ${period} не было.` })
     return
   }
-  for (const o of orders) await sendOrderDocument(o.id, recipients).catch((err) => console.error('order document', o.id, err))
+  // At night the documents groups already hold every накладная (sent live), so they only get the summary.
+  const forOrders = mode === 'night' && !to ? recipients.filter((r) => !isGroup(r)) : recipients
+  if (forOrders.length) for (const o of orders) await sendOrderDocument(o.id, forOrders).catch((err) => console.error('order document', o.id, err))
   const rows = new Map<string, XlsxSummaryRow>()
   for (const o of orders) {
     // deno-lint-ignore no-explicit-any
@@ -561,7 +599,9 @@ Deno.serve(async (req) => {
       // `to` (optional): send only to these chats instead of every documents recipient.
       const to = Array.isArray(body.to) ? body.to.map(String) : undefined
       const work =
-        body.kind === 'daily'
+        body.kind === 'order' && body.order_id && body.requested_at
+          ? refreshOrderDocument(String(body.order_id), String(body.requested_at))
+          : body.kind === 'daily'
           ? sendNightBatch('night', to)
           : body.kind === 'now'
             ? sendNightBatch('soFar', to)
