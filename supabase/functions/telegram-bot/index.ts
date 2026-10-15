@@ -180,6 +180,10 @@ function catalogPrice(p: any, unit: string): number | null {
 // 12:00–22:00 UTC of the same UTC day.
 const fmtTashkent = (d: Date) => d.toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 
+/** "15.10, с 17:00 до 03:00" — one evening and the night after it, not two days. */
+const nightLabel = (windowStart: Date) =>
+  `${windowStart.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit' })}, с 17:00 до 03:00`
+
 /** The night window an order belongs to (its 12:00 UTC start), or null for a daytime order. */
 function windowOf(createdAt: Date): Date | null {
   const h = createdAt.getUTCHours()
@@ -242,13 +246,13 @@ async function refreshSummary(windowStart: Date, final = false) {
   }
   const groups = (await docsChatIds()).filter(isGroup)
   const end = new Date(windowStart.getTime() + 10 * 3600 * 1000)
-  const period = `${fmtTashkent(windowStart)} – ${fmtTashkent(end)}`
+  const period = nightLabel(windowStart)
   const summary = await buildSummary(windowStart, end, period)
   const { data: previous } = await admin.from('telegram_summary_messages').select('chat_id, message_id').eq('window_start', key)
   for (const m of previous ?? []) await telegram('deleteMessage', { chat_id: m.chat_id, message_id: m.message_id })
   await admin.from('telegram_summary_messages').delete().eq('window_start', key)
   if (summary && groups.length) {
-    const day = end.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
+    const day = windowStart.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
     const caption = final
       ? `✅ Итог за ночь — Товары по заказам, ${period}: ${summary.positions} поз. из ${summary.orders.length} заказов`
       : `🔄 Товары по заказам, ${period} (обновляется с каждым заказом): ${summary.positions} поз. из ${summary.orders.length} заказов`
@@ -291,14 +295,16 @@ async function sendNightBatch(mode: 'night' | 'soFar' | 'open' = 'night', to?: s
       if (!recipients.length) return
     }
   }
-  const period = mode === 'open' ? `текущие заказы на ${fmtTashkent(end)}` : `${fmtTashkent(start)} – ${fmtTashkent(end)}`
+  const period =
+    mode === 'open' ? `текущие заказы на ${fmtTashkent(end)}` : mode === 'soFar' ? `${nightLabel(start)} (на ${fmtTashkent(end)})` : nightLabel(start)
   const summary = await buildSummary(start, end, period, mode === 'open')
   if (!summary) {
     for (const r of recipients) await telegram('sendMessage', { chat_id: r, text: mode === 'open' ? 'Текущих заказов нет.' : `Заказов с ${period} не было.` })
     return
   }
   for (const o of summary.orders) await sendOrderDocument(o.id, recipients).catch((err) => console.error('order document', o.id, err))
-  const day = end.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
+  // The file is named after the evening the window starts, not the morning it ends.
+  const day = (mode === 'open' ? end : start).toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric' })
   for (const r of recipients) await sendFile(r, summary.file, `Товары по заказам ${day}.xlsx`, `Товары по заказам, ${period}: ${summary.positions} поз. из ${summary.orders.length} заказов`)
 }
 
@@ -508,9 +514,11 @@ async function handleOrder(msg: TgMessage, text: string) {
 
   // A group nobody linked yet: the order is placed right away without a
   // client, and the admins pick the client with a button afterwards.
-  const placed = await placeFromText(msg.chat.id, msg.message_id, text, msg.chat.title ?? 'без названия')
+  // A private chat (someone writing to the bot directly) works like a group, named after the person.
+  const title = msg.chat.type === 'private' && msg.from ? `личка: ${fullName(msg.from)}` : msg.chat.title ?? 'без названия'
+  const placed = await placeFromText(msg.chat.id, msg.message_id, text, title)
   // Normally the admins were already asked when the bot joined the group.
-  if (placed && !placed.merged && !(await alreadyAsked(msg.chat.id))) await askWhichClient(msg.chat.id, msg.chat.title ?? 'без названия')
+  if (placed && !placed.merged && !(await alreadyAsked(msg.chat.id))) await askWhichClient(msg.chat.id, title)
 }
 
 /** Turns one message into an order (or a follow-up) for the group's client and answers in the group. */
@@ -592,7 +600,7 @@ async function askWhichClient(chatId: number, title: string, justAdded = false, 
       chat_id: id,
       text: justAdded
         ? `Бота добавили в группу «${title}». Чей это клиент? Нажмите — и заказы из группы будут оформляться на него.`
-        : `Новая группа «${title}» прислала заказ — он уже на сайте, но без клиента. Чей это клиент? Нажмите — группа привяжется, и заказ перейдёт к нему.`,
+        : `Новый чат «${title}» прислал заказ — он уже на сайте, но без клиента. Чей это клиент? Нажмите — чат привяжется, и заказ перейдёт к нему.`,
       reply_markup: { inline_keyboard: rows },
     })
   }
@@ -601,7 +609,7 @@ async function askWhichClient(chatId: number, title: string, justAdded = false, 
 /** An admin picked the client for a new group: link it and hand over its orders. */
 async function linkFromButton(cb: TgCallback, chatId: number, customerId: string) {
   const { data: chat } = await telegram('getChat', { chat_id: chatId })
-  const title: string = chat?.title ?? 'группа'
+  const title: string = chat?.title ?? (chat?.first_name ? `личка: ${[chat.first_name, chat.last_name].filter(Boolean).join(' ')}` : 'группа')
   const edit = (text: string) =>
     cb.message ? telegram('editMessageText', { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text }) : Promise.resolve()
 
