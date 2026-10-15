@@ -666,6 +666,8 @@ Deno.serve(async (req) => {
       const work =
         body.kind === 'order' && body.order_id && body.requested_at
           ? refreshOrderDocument(String(body.order_id), String(body.requested_at))
+          : body.kind === 'summary'
+          ? refreshSummary(currentWindow())
           : body.kind === 'daily'
           ? sendNightBatch('night', to)
           : body.kind === 'now'
