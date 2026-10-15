@@ -268,6 +268,19 @@ async function refreshSummary(windowStart: Date, final = false) {
   await admin.from('telegram_summary_pending').delete().eq('window_start', key).eq('requested_at', mine)
 }
 
+/** Deletes every накладная and summary the bot is keeping in the documents
+ * groups (used when all orders are cleared). Telegram only lets a bot delete
+ * its messages for 48 hours; older ones stay. */
+async function purgeDocuments() {
+  const { data: docs } = await admin.from('telegram_doc_messages').select('chat_id, message_id')
+  const { data: sums } = await admin.from('telegram_summary_messages').select('chat_id, message_id')
+  for (const m of [...(docs ?? []), ...(sums ?? [])]) await telegram('deleteMessage', { chat_id: m.chat_id, message_id: m.message_id })
+  await admin.from('telegram_doc_messages').delete().gte('chat_id', -1e15)
+  await admin.from('telegram_summary_messages').delete().gte('chat_id', -1e15)
+  await admin.from('telegram_doc_pending').delete().not('order_id', 'is', null)
+  await admin.from('telegram_summary_pending').delete().not('window_start', 'is', null)
+}
+
 /** 03:00 Tashkent: each order placed since 17:00 the evening before — its
  * накладная, then "Товары по заказам" for all of them added up. The
  * documents groups already have every накладная and a live summary, so for
@@ -676,6 +689,8 @@ Deno.serve(async (req) => {
           ? refreshOrderDocument(String(body.order_id), String(body.requested_at))
           : body.kind === 'summary'
           ? refreshSummary(currentWindow())
+          : body.kind === 'purge'
+          ? purgeDocuments()
           : body.kind === 'daily'
           ? sendNightBatch('night', to)
           : body.kind === 'now'
