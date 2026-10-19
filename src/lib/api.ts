@@ -769,3 +769,20 @@ export async function sendSupportMessage(ownerId: string, ownerType: 'customer' 
   const { error } = await db.from('support_messages').insert({ [column]: ownerId, sender: 'admin', message })
   if (error) throw error
 }
+
+/** Category photos set on the Products page — products.category → photo URL. */
+export async function fetchCategoryPhotos(): Promise<Record<string, string>> {
+  const db = assertClient()
+  const { data, error } = await db.from('category_photos').select('category, image_url')
+  if (error) throw error
+  return Object.fromEntries((data ?? []).map((r) => [r.category as string, r.image_url as string]))
+}
+
+/** Sets a category's photo; `null` removes it so the app's standard photo shows again. */
+export async function setCategoryPhoto(category: string, imageUrl: string | null) {
+  const db = assertClient()
+  const { error } = imageUrl
+    ? await db.from('category_photos').upsert({ category, image_url: imageUrl, updated_at: new Date().toISOString() })
+    : await db.from('category_photos').delete().eq('category', category)
+  if (error) throw error
+}

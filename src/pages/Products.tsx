@@ -1,6 +1,7 @@
-import { ArrowUpDown, CircleCheck, Copy, Download, Pencil, Plus, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react'
+import { ArrowUpDown, CircleCheck, Copy, Download, Images, Pencil, Plus, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import CategoryPhotosModal from '../components/CategoryPhotosModal'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import Dropdown from '../components/ui/Dropdown'
@@ -43,6 +44,7 @@ export default function Products() {
   const [importing, setImporting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [photosOpen, setPhotosOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const categories = useMemo(
@@ -165,6 +167,9 @@ export default function Products() {
           <p>{t('products.subtitle', { count: products.length, categories: categories.length })}</p>
         </div>
         <div className="header-actions">
+          <Button variant="ghost" icon={<Images />} onClick={() => setPhotosOpen(true)}>
+            Фото категорий
+          </Button>
           <Button variant="ghost" icon={<Upload />} onClick={() => fileInputRef.current?.click()} disabled={importing}>
             {importing ? 'Загружаем…' : 'Импорт товаров'}
           </Button>
@@ -188,6 +193,7 @@ export default function Products() {
           </Link>
         </div>
       </div>
+      {photosOpen && <CategoryPhotosModal categories={categories} onClose={() => setPhotosOpen(false)} />}
       {importMsg && (
         <div
           style={{
