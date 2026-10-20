@@ -104,6 +104,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.couriers': 'Couriers',
     'nav.support': 'Support',
     'nav.analytics': 'Analytics',
+    'nav.leads': 'Requests',
 
     'common.export': 'Export',
     'common.exportReport': 'Export report',
@@ -394,6 +395,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.couriers': 'Курьеры',
     'nav.support': 'Поддержка',
     'nav.analytics': 'Аналитика',
+    'nav.leads': 'Заявки',
 
     'common.export': 'Экспорт',
     'common.exportReport': 'Экспорт отчёта',

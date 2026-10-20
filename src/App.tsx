@@ -12,6 +12,7 @@ import Deliveries from './pages/Deliveries'
 import DeleteAccount from './pages/legal/DeleteAccount'
 import PrivacyPolicy from './pages/legal/PrivacyPolicy'
 import SupportPage from './pages/legal/SupportPage'
+import Leads from './pages/Leads'
 import Login from './pages/Login'
 import OrderDetail from './pages/OrderDetail'
 import Orders from './pages/Orders'
@@ -75,6 +76,7 @@ function DashboardRoutes() {
         <Route path="/deliveries/:id" element={<DeliveryDetail />} />
         <Route path="/couriers" element={<Couriers />} />
         <Route path="/support" element={<Support />} />
+        <Route path="/leads" element={<Leads />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

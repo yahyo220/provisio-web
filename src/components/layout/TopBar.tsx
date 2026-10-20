@@ -2,7 +2,7 @@ import { Bell, Leaf } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useLanguage } from '../../i18n/LanguageContext'
-import { countUnreadSupportMessages } from '../../lib/api'
+import { countNewSiteLeads, countUnreadSupportMessages } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
 import AccountMenu from './AccountMenu'
 
@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { key: 'nav.deliveries', to: '/deliveries' },
   { key: 'nav.couriers', to: '/couriers' },
   { key: 'nav.support', to: '/support' },
+  { key: 'nav.leads', to: '/leads' },
   { key: 'nav.analytics', to: '/analytics' },
 ]
 
@@ -48,9 +49,39 @@ function useSupportUnread() {
   return unread
 }
 
+/** True while any request from the landing page is still marked 'new'. */
+function useNewSiteLeads() {
+  const [hasNew, setHasNew] = useState(false)
+
+  useEffect(() => {
+    if (!supabase) return
+    const client = supabase
+    let cancelled = false
+    const refresh = () => {
+      countNewSiteLeads()
+        .then((n) => {
+          if (!cancelled) setHasNew(n > 0)
+        })
+        .catch(() => {})
+    }
+    refresh()
+    const channel = client
+      .channel('topbar-site-leads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'site_leads' }, refresh)
+      .subscribe()
+    return () => {
+      cancelled = true
+      client.removeChannel(channel)
+    }
+  }, [])
+
+  return hasNew
+}
+
 export default function TopBar() {
   const { t } = useLanguage()
   const supportUnread = useSupportUnread()
+  const newLeads = useNewSiteLeads()
 
   return (
     <div className="topbar">
@@ -69,6 +100,7 @@ export default function TopBar() {
           <NavLink key={link.to} to={link.to} end={link.to === '/'} className="nav-link">
             {t(link.key)}
             {link.to === '/support' && supportUnread && <span className="nav-dot" aria-label="Есть новые сообщения" />}
+            {link.to === '/leads' && newLeads && <span className="nav-dot" aria-label="Есть новые заявки" />}
           </NavLink>
         ))}
       </nav>

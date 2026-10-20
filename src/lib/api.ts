@@ -731,6 +731,54 @@ export async function countUnreadSupportMessages(): Promise<number> {
   return count ?? 0
 }
 
+/** A request left on the public landing page (site_leads, migration 0081). */
+export interface SiteLead {
+  id: string
+  createdAt: string
+  name: string
+  phone: string
+  businessType: string | null
+  comment: string | null
+  lang: string | null
+  status: 'new' | 'done'
+}
+
+export async function listSiteLeads(): Promise<SiteLead[]> {
+  const db = assertClient()
+  const { data, error } = await db
+    .from('site_leads')
+    .select('id, created_at, name, phone, business_type, comment, lang, status')
+    .order('created_at', { ascending: false })
+    .limit(500)
+  if (error) throw error
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    createdAt: r.created_at,
+    name: r.name,
+    phone: r.phone,
+    businessType: r.business_type,
+    comment: r.comment,
+    lang: r.lang,
+    status: r.status,
+  }))
+}
+
+export async function setSiteLeadStatus(id: string, status: 'new' | 'done'): Promise<void> {
+  const db = assertClient()
+  const { error } = await db.from('site_leads').update({ status }).eq('id', id)
+  if (error) throw error
+}
+
+export async function countNewSiteLeads(): Promise<number> {
+  const db = assertClient()
+  const { count, error } = await db
+    .from('site_leads')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'new')
+  if (error) throw error
+  return count ?? 0
+}
+
 export interface FeedbackDetail {
   id: string
   message: string
