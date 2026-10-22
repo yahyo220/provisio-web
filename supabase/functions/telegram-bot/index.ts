@@ -456,8 +456,21 @@ const ADMIN_START = [
   '',
   'Когда бота добавят в группу, сюда придёт вопрос, чей это клиент.',
   '/groups — группы и их клиенты, сменить клиента или отвязать',
+  '/off — выключить бота (не принимает заказы и не шлёт документы), /on — включить',
   DOCS_HELP,
 ].join('\n')
+
+/** Bot switched off with /off (telegram_settings key 'paused'): it ignores
+ * groups, orders and the database's document calls until /on. */
+async function isPaused(): Promise<boolean> {
+  const { data } = await admin.from('telegram_settings').select('key').eq('key', 'paused').maybeSingle()
+  return !!data
+}
+
+async function setPaused(paused: boolean) {
+  if (paused) await admin.from('telegram_settings').upsert({ key: 'paused', value: 'on', updated_at: new Date().toISOString() })
+  else await admin.from('telegram_settings').delete().eq('key', 'paused')
+}
 
 /** /groups: every linked group with its client; a tap opens the client picker for it. */
 async function showGroups(chatId: number, replyTo: number) {
@@ -488,6 +501,15 @@ async function handleCommand(msg: TgMessage, text: string) {
   if (cmd === '/id') {
     return reply(msg.chat.id, msg.message_id, `Ваш ID в Telegram: <code>${msg.from?.id ?? '—'}</code>`)
   }
+  if (cmd === '/off') {
+    await setPaused(true)
+    return reply(msg.chat.id, msg.message_id, 'Бот выключен: заказы из групп не принимаются, документы не отправляются. Включить — /on')
+  }
+  if (cmd === '/on') {
+    await setPaused(false)
+    return reply(msg.chat.id, msg.message_id, 'Бот снова работает.')
+  }
+  if (await isPaused()) return reply(msg.chat.id, msg.message_id, 'Бот сейчас выключен. Включить — /on')
   if (cmd === '/groups') return showGroups(msg.chat.id, msg.message_id)
   if (cmd === '/admins') {
     if (!isOwner) return reply(msg.chat.id, msg.message_id, 'Это может только владелец бота.')
@@ -679,6 +701,7 @@ Deno.serve(async (req) => {
     const dbSecret = req.headers.get('x-webhook-secret')
     if (dbSecret) {
       if (!DB_SECRET || dbSecret !== DB_SECRET) return json({ error: 'Unauthorized' }, 401)
+      if (await isPaused()) return json({ ok: true, paused: true }, 202)
       const body = await req.json()
       // Answer the database right away; building and sending the PDFs keeps
       // running in the background (pg_net gives up waiting after seconds).
@@ -713,6 +736,13 @@ Deno.serve(async (req) => {
     }
 
     const update = await req.json()
+    // Switched off: only an admin's commands in the private chat still work (so /on can turn it back on).
+    if (await isPaused()) {
+      const m: TgMessage | undefined = update.message
+      const t = m?.text?.trim()
+      if (m && t?.startsWith('/') && m.chat.type === 'private' && !m.from?.is_bot) await handleCommand(m, t)
+      return json({ ok: true })
+    }
     // The bot was added to a group: ask the admins right away whose client it is.
     const member = update.my_chat_member
     if (member && ['group', 'supergroup'].includes(member.chat?.type)) {
