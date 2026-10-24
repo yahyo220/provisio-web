@@ -23,7 +23,6 @@ import {
   stockState,
   STOCK_STATE_LABELS,
   todayIso,
-  WAREHOUSE_IS_DEMO,
   WRITE_OFF_REASONS,
   type Movement,
   type Receipt,
@@ -74,7 +73,7 @@ function writeTable(
   titleCell.font = { bold: true, size: 14 }
   ws.mergeCells(r, 1, r, columns.length)
   r += 1
-  const sub = WAREHOUSE_IS_DEMO ? `${subtitle} · тестовые данные: склад ещё не подключён к базе` : subtitle
+  const sub = subtitle
   const subCell = ws.getCell(r, 1)
   subCell.value = sub
   subCell.font = { size: 10, color: { argb: 'FF55523F' } }

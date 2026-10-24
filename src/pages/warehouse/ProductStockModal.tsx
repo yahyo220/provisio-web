@@ -4,22 +4,24 @@ import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import Switch from '../../components/ui/Switch'
 import { useLanguage } from '../../i18n/LanguageContext'
-import { formatMoney } from '../../lib/format'
+import { formatMoney, parseMoney } from '../../lib/format'
 import type { ProductRow } from '../../lib/types'
-import { formatDay, formatDayTime, MOVEMENT_LABELS, parseAmount, stockOf, stockState, type StockSettings, type WarehouseState } from '../../lib/warehouse'
+import { formatDay, formatDayTime, MOVEMENT_LABELS, parseAmount, salePriceFromCost, stockOf, stockState, type StockSettings, type WarehouseState } from '../../lib/warehouse'
+import { useData } from '../../store/DataContext'
 import { ExpiryText, ProductCell, Qty, StockStateBadge } from './shared'
 
 interface ProductStockModalProps {
   state: WarehouseState
   product: ProductRow
   onClose: () => void
-  onSaveSettings: (settings: StockSettings) => void
+  onSaveSettings: (settings: StockSettings) => Promise<void>
   onReceive: () => void
   onWriteOff: () => void
 }
 
 export default function ProductStockModal({ state, product, onClose, onSaveSettings, onReceive, onWriteOff }: ProductStockModalProps) {
   const { unit } = useLanguage()
+  const { updateProduct } = useData()
   const settings = state.settings[product.id]
   const stock = stockOf(state, product.id)
   const receiptNumber = useMemo(() => new Map(state.receipts.map((r) => [r.id, r.number])), [state.receipts])
@@ -42,7 +44,31 @@ export default function ProductStockModal({ state, product, onClose, onSaveSetti
   const priceDelta = lastPrice != null && prevPrice ? Math.round(((lastPrice - prevPrice) / prevPrice) * 100) : null
   const movements = state.movements.filter((m) => m.productId === product.id).slice(0, 30)
 
-  function saveSettings() {
+  // Sale prices against the last purchase: a receipt only ever raises them,
+  // so when the purchase got cheaper the card offers to lower them by hand.
+  const { marginPercent, externalMarginPercent } = state.pricing
+  const salePrice = parseMoney(product.price) || 0
+  const ruleSale = lastPrice != null && lastPrice > 0 ? salePriceFromCost(lastPrice, marginPercent) : null
+  const extPrice = product.priceExternal ? parseMoney(product.priceExternal) || 0 : null
+  const ruleExt = lastPrice != null && lastPrice > 0 && externalMarginPercent != null ? salePriceFromCost(lastPrice, externalMarginPercent) : null
+  const [priceBusy, setPriceBusy] = useState(false)
+  const [priceMsg, setPriceMsg] = useState<string | null>(null)
+
+  async function lowerPrice(patch: { price?: string; priceExternal?: string }) {
+    setPriceBusy(true)
+    setPriceMsg(null)
+    try {
+      await updateProduct(product.id, patch)
+      setPriceMsg('Цена обновлена.')
+    } catch (err) {
+      console.error(err)
+      setPriceMsg('Не удалось обновить цену.')
+    } finally {
+      setPriceBusy(false)
+    }
+  }
+
+  async function saveSettings() {
     const minStock = parseAmount(minText, 3)
     if (minStock === null) {
       setSettingsMsg({ ok: false, text: 'Минимальный запас — число, например 20 или 12,5.' })
@@ -68,8 +94,13 @@ export default function ProductStockModal({ state, product, onClose, onSaveSetti
       }
       unitSize[u] = size
     }
-    onSaveSettings({ ...settings, minStock, tracksExpiry, shelfLifeDays, unitSize })
-    setSettingsMsg({ ok: true, text: 'Сохранено.' })
+    try {
+      await onSaveSettings({ ...settings, minStock, tracksExpiry, shelfLifeDays, unitSize })
+      setSettingsMsg({ ok: true, text: 'Сохранено.' })
+    } catch (err) {
+      console.error(err)
+      setSettingsMsg({ ok: false, text: 'Не удалось сохранить. Попробуйте ещё раз.' })
+    }
   }
 
   return (
@@ -193,6 +224,37 @@ export default function ProductStockModal({ state, product, onClose, onSaveSetti
           {prevPrice != null && <span className="unit-muted">к прошлой закупке ({formatMoney(prevPrice)})</span>}
         </div>
       )}
+      {ruleSale != null && (
+        <div className="wh-price-box">
+          <span className="unit-muted">Цена продажи</span>
+          <strong>
+            {formatMoney(salePrice)} / {unit(settings.baseUnit)}
+          </strong>
+          <span className="unit-muted">
+            по последней закупке + {marginPercent}%: {formatMoney(ruleSale)}
+          </span>
+          {salePrice > ruleSale && (
+            <Button variant="ghost" disabled={priceBusy} onClick={() => lowerPrice({ price: String(ruleSale) })}>
+              Снизить до {formatMoney(ruleSale)}
+            </Button>
+          )}
+        </div>
+      )}
+      {ruleExt != null && extPrice != null && (
+        <div className="wh-price-box">
+          <span className="unit-muted">Внешняя цена</span>
+          <strong>{formatMoney(extPrice)}</strong>
+          <span className="unit-muted">
+            по последней закупке + {externalMarginPercent}%: {formatMoney(ruleExt)}
+          </span>
+          {extPrice > ruleExt && (
+            <Button variant="ghost" disabled={priceBusy} onClick={() => lowerPrice({ priceExternal: String(ruleExt) })}>
+              Снизить до {formatMoney(ruleExt)}
+            </Button>
+          )}
+        </div>
+      )}
+      {priceMsg && <p className="unit-muted">{priceMsg}</p>}
       <div className="table-wrap">
         <table>
           <thead>

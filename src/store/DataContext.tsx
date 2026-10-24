@@ -87,6 +87,8 @@ interface DataContextValue {
   /** True once VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY are set — false falls back to local-only demo state. */
   connected: boolean
   loading: boolean
+  /** Re-reads everything from Supabase — e.g. after the warehouse raised sale prices. */
+  refresh: () => Promise<void>
 
   products: ProductRow[]
   toggleProductActive: (id: string) => Promise<void>
@@ -192,6 +194,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     () => ({
       connected,
       loading,
+      refresh: async () => {
+        if (connected) await refresh()
+      },
 
       products,
       toggleProductActive: async (id) => {

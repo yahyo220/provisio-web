@@ -1,5 +1,5 @@
 import { Download, Printer } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/ui/Modal'
 import { useLanguage } from '../../i18n/LanguageContext'
@@ -7,7 +7,8 @@ import { translateUnit } from '../../i18n/translations'
 import { downloadProductSummaryExcel, formatSummaryQty, printProductSummary, summarizeItems } from '../../lib/productSummary'
 import { formatMoney, orderLabel, parseMoney } from '../../lib/format'
 import type { OrderStatus } from '../../lib/types'
-import { addDays, createDemoWarehouse, formatDay, formatQty, stockOf, toDateIso, todayIso } from '../../lib/warehouse'
+import { addDays, formatDay, formatQty, stockOf, toDateIso, todayIso, type WarehouseState } from '../../lib/warehouse'
+import { loadWarehouse } from '../../lib/warehouseDb'
 import { useData } from '../../store/DataContext'
 import { DateInput } from '../warehouse/shared'
 
@@ -45,11 +46,20 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }, [orders, mode, from, to])
 
-  // Current stock, from the same (demo, for now) warehouse the Склад page shows.
-  const warehouse = useMemo(() => {
-    const active = products.filter((p) => p.active)
-    return createDemoWarehouse(active, orders.map((o) => o.orderNumber).slice(0, 40))
-  }, [products, orders])
+  // Current stock, from the same warehouse the Склад page shows. Blank cells
+  // until it loads (or if it can't).
+  const [warehouse, setWarehouse] = useState<WarehouseState | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    loadWarehouse(products.filter((p) => p.active))
+      .then((w) => {
+        if (!cancelled) setWarehouse(w)
+      })
+      .catch((err) => console.error('warehouse', err))
+    return () => {
+      cancelled = true
+    }
+  }, [products])
 
   const rows = useMemo(() => {
     const ids = new Set(chosen.map((o) => o.id))
@@ -67,8 +77,8 @@ export default function ProductSummaryModal({ onClose }: { onClose: () => void }
       return text ? parseMoney(text) || null : null
     }
     const stockText = (productId: string) => {
-      const settings = warehouse.settings[productId]
-      return settings ? `${formatQty(stockOf(warehouse, productId))} ${unit(settings.baseUnit)}` : undefined
+      const settings = warehouse?.settings[productId]
+      return warehouse && settings ? `${formatQty(stockOf(warehouse, productId))} ${unit(settings.baseUnit)}` : undefined
     }
     return summarizeItems(
       orderItems.filter((i) => ids.has(i.orderId)),

@@ -1,22 +1,13 @@
 import { FileSpreadsheet, Minus, Plus, Warehouse as WarehouseIcon } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Dropdown from '../components/ui/Dropdown'
 import Modal from '../components/ui/Modal'
 import { downloadWarehouseReport } from '../lib/exportWarehouse'
-import {
-  addDays,
-  createDemoWarehouse,
-  orderWriteOffViews,
-  postReceipt,
-  postWriteOff,
-  todayIso,
-  updateSettings,
-  WAREHOUSE_IS_DEMO,
-  type WarehouseState,
-  type WriteOffReason,
-} from '../lib/warehouse'
+import { formatMoney } from '../lib/format'
+import { addDays, orderWriteOffViews, todayIso, type WarehouseState, type WriteOffReason } from '../lib/warehouse'
+import { loadWarehouse, postReceiptDb, postWriteOffsDb, saveSettingsDb } from '../lib/warehouseDb'
 import { useData } from '../store/DataContext'
 import ExpiryTab from './warehouse/ExpiryTab'
 import { DateInput, ExportButton } from './warehouse/shared'
@@ -45,24 +36,34 @@ type Dialog =
   | null
 
 export default function Warehouse() {
-  const { products, orders, loading } = useData()
+  const { products, loading: dataLoading, refresh } = useData()
   const [params, setParams] = useSearchParams()
   const tab: TabKey = TABS.some((t) => t.key === params.get('tab')) ? (params.get('tab') as TabKey) : 'stock'
 
   const activeProducts = useMemo(() => products.filter((p) => p.active), [products])
   const productsById = useMemo(() => new Map(activeProducts.map((p) => [p.id, p])), [activeProducts])
-  const orderNumbers = useMemo(() => orders.map((o) => o.orderNumber).slice(0, 40), [orders])
 
-  // DEMO: generated from the real catalog until the warehouse tables exist
-  // (see lib/warehouse.ts). Receipts and write-offs posted here live in
-  // `edited` and are gone after a reload.
-  const demo = useMemo(() => createDemoWarehouse(activeProducts, orderNumbers), [activeProducts, orderNumbers])
-  const [edited, setEdited] = useState<WarehouseState | null>(null)
-  const state = edited ?? demo
+  const [state, setState] = useState<WarehouseState | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const reload = useCallback(async () => {
+    try {
+      setState(await loadWarehouse(activeProducts))
+      setLoadError(null)
+    } catch (err) {
+      console.error(err)
+      setLoadError('Не удалось загрузить склад. Обновите страницу.')
+    }
+  }, [activeProducts])
+  useEffect(() => {
+    if (!dataLoading) reload()
+  }, [dataLoading, reload])
 
-  const [warehouseId, setWarehouseId] = useState<string | null>(state.warehouses[0]?.id ?? null)
+  const [warehouseId, setWarehouseId] = useState<string | null>(null)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // A receipt or write-off is being saved — a second click must not post it twice.
+  const posting = useRef(false)
+  const loading = dataLoading || (!state && !loadError)
 
   function openTab(key: TabKey) {
     setParams(key === 'stock' ? {} : { tab: key }, { replace: true })
@@ -83,8 +84,8 @@ export default function Warehouse() {
             icon={<WarehouseIcon />}
             variant="pill"
             hideAllOption
-            options={state.warehouses.map((w) => ({ label: w.name, value: w.id }))}
-            value={warehouseId}
+            options={(state?.warehouses ?? []).map((w) => ({ label: w.name, value: w.id }))}
+            value={warehouseId ?? state?.warehouses[0]?.id ?? null}
             onChange={setWarehouseId}
           />
           <Button variant="ghost" icon={<FileSpreadsheet />} onClick={() => setDialog({ kind: 'report' })}>
@@ -99,12 +100,7 @@ export default function Warehouse() {
         </div>
       </div>
 
-      {WAREHOUSE_IS_DEMO && (
-        <div className="wh-demo-note">
-          <strong>Склад ещё не подключён к базе.</strong> Остатки начинаются с нуля. Приходы и списания можно оформлять, но после перезагрузки страницы они
-          сбросятся.
-        </div>
-      )}
+      {loadError && <div className="wh-demo-note">{loadError}</div>}
 
       {notice && (
         <div className="wh-notice" role="status">
@@ -125,7 +121,7 @@ export default function Warehouse() {
         ))}
       </div>
 
-      {!loading && tab === 'stock' && (
+      {!loading && state && tab === 'stock' && (
         <StockTab
           state={state}
           products={activeProducts}
@@ -134,51 +130,77 @@ export default function Warehouse() {
           onOpenProduct={(productId) => setDialog({ kind: 'product', productId })}
         />
       )}
-      {!loading && tab === 'receipts' && <ReceiptsTab state={state} productsById={productsById} onNewReceipt={() => setDialog({ kind: 'receipt' })} />}
-      {!loading && tab === 'writeoffs' && <WriteOffsTab state={state} productsById={productsById} />}
-      {!loading && tab === 'expiry' && (
+      {!loading && state && tab === 'receipts' && <ReceiptsTab state={state} productsById={productsById} onNewReceipt={() => setDialog({ kind: 'receipt' })} />}
+      {!loading && state && tab === 'writeoffs' && <WriteOffsTab state={state} productsById={productsById} />}
+      {!loading && state && tab === 'expiry' && (
         <ExpiryTab
           state={state}
           productsById={productsById}
           onWriteOff={(productId, batchId) => setDialog({ kind: 'writeoff', productId, batchId, reason: 'expired' })}
         />
       )}
-      {!loading && tab === 'journal' && <JournalTab state={state} productsById={productsById} />}
+      {!loading && state && tab === 'journal' && <JournalTab state={state} productsById={productsById} />}
 
-      {dialog?.kind === 'receipt' && (
+      {state && dialog?.kind === 'receipt' && (
         <ReceiptModal
           state={state}
           products={activeProducts}
           initialProductId={dialog.productId}
           onClose={() => setDialog(null)}
-          onSubmit={(input) => {
-            const result = postReceipt(state, input)
-            setEdited(result.state)
-            setDialog(null)
-            setNotice(`Приход ${result.receipt.number} проведён: ${result.receipt.lines.length} поз.`)
+          onSubmit={async (input) => {
+            if (posting.current) return
+            posting.current = true
+            try {
+              const result = await postReceiptDb(input)
+              setDialog(null)
+              const prices = result.priceChanges.map((c) => `${c.name} ${formatMoney(c.oldPrice)} → ${formatMoney(c.newPrice)}`)
+              setNotice(
+                `Приход ${result.number} проведён: ${result.lines} поз.` +
+                  (prices.length > 0 ? ` Цены продажи подняты (закупка + ${state.pricing.marginPercent}%): ${prices.join('; ')}.` : ''),
+              )
+              await Promise.all([reload(), result.priceChanges.length > 0 ? refresh() : Promise.resolve()])
+            } catch (err) {
+              console.error(err)
+              setNotice('Не удалось провести приход. Проверьте интернет и попробуйте ещё раз.')
+            } finally {
+              posting.current = false
+            }
           }}
         />
       )}
-      {dialog?.kind === 'writeoff' && (
+      {state && dialog?.kind === 'writeoff' && (
         <WriteOffModal
           state={state}
           products={activeProducts}
           initial={dialog}
           onClose={() => setDialog(null)}
-          onSubmit={(inputs) => {
-            setEdited(inputs.reduce((s, input) => postWriteOff(s, input), state))
-            setDialog(null)
-            setNotice(inputs.length === 1 ? `Списано: ${productsById.get(inputs[0].productId)?.name ?? 'товар'}.` : `Списано позиций: ${inputs.length}.`)
+          onSubmit={async (inputs) => {
+            if (posting.current) return
+            posting.current = true
+            try {
+              await postWriteOffsDb(inputs)
+              setDialog(null)
+              setNotice(inputs.length === 1 ? `Списано: ${productsById.get(inputs[0].productId)?.name ?? 'товар'}.` : `Списано позиций: ${inputs.length}.`)
+              await reload()
+            } catch (err) {
+              console.error(err)
+              setNotice('Не удалось списать. Проверьте интернет и попробуйте ещё раз.')
+            } finally {
+              posting.current = false
+            }
           }}
         />
       )}
-      {dialog?.kind === 'report' && <ReportModal state={state} onClose={() => setDialog(null)} />}
-      {dialog?.kind === 'product' && dialogProduct && (
+      {state && dialog?.kind === 'report' && <ReportModal state={state} onClose={() => setDialog(null)} />}
+      {state && dialog?.kind === 'product' && dialogProduct && (
         <ProductStockModal
           state={state}
           product={dialogProduct}
           onClose={() => setDialog(null)}
-          onSaveSettings={(settings) => setEdited(updateSettings(state, settings))}
+          onSaveSettings={async (settings) => {
+            await saveSettingsDb(settings)
+            await reload()
+          }}
           onReceive={() => setDialog({ kind: 'receipt', productId: dialogProduct.id })}
           onWriteOff={() => setDialog({ kind: 'writeoff', productId: dialogProduct.id })}
         />
